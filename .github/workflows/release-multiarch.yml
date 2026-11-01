@@ -23,21 +23,23 @@ jobs:
           add-to-path: true
       - name: configure NDK toolchain
         run: |
-          # setup-ndk 把 NDK bin 加入 PATH，工具链在 $NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
-          PREBUILT="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          CLANG="$PREBUILT/aarch64-linux-android21-clang"
-          CLANGPP="$PREBUILT/aarch64-linux-android21-clang++"
-          echo "NDK_HOME=$NDK_HOME"; echo "clang=$CLANG"; ls "$CLANG"
+          # setup-ndk add-to-path 把 NDK bin 加入 PATH；用 which 定位（NDK/NDK_LLVM_BIN_DIR 变量名各版本不一）
+          CLANG="$(which aarch64-linux-android21-clang)"
+          CLANGPP="$(which aarch64-linux-android21-clang++)"
+          LLMAR="$(which llvm-ar)"
+          echo "clang=$CLANG"; echo "clangpp=$CLANGPP"; echo "ar=$LLMAR"
+          test -x "$CLANG" || { echo "clang not found in PATH (add-to-path failed?)"; exit 1; }
           # 跨 step 持久化：cc-rs 找 C 编译器、cargo 找 linker 都依赖这些
           {
             echo "CC_aarch64_linux_android=$CLANG"
             echo "CXX_aarch64_linux_android=$CLANGPP"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CLANG"
-            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=$PREBUILT/llvm-ar"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=$LLMAR"
           } >> "$GITHUB_ENV"
           mkdir -p .cargo
           printf '[target.aarch64-linux-android]\nlinker = "%s"\n' "$CLANG" > .cargo/config.toml
           cat .cargo/config.toml
+          env | grep -E 'CC_|CARGO_TARGET_AARCH64' || true
       - run: cargo build --release --target aarch64-linux-android
       - run: file target/aarch64-linux-android/release/noveldownloader
       - name: upload android asset (append)
