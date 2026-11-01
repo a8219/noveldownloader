@@ -1,0 +1,106 @@
+name: Release Multi-Arch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26c
+      - run: cargo build --release --target aarch64-linux-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aarch64
+          path: target/aarch64-linux-android/release/noveldownloader
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - run: cargo build --release
+      - run: cargo build --release --target x86_64-apple-darwin
+      - name: rename artifacts
+        run: |
+          cp target/release/noveldownloader target/noveldownloader-aarch64-macos
+          cp target/x86_64-apple-darwin/release/noveldownloader target/noveldownloader-x86_64-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            target/noveldownloader-aarch64-macos
+            target/noveldownloader-x86_64-macos
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: attempt iOS build
+        run: |
+          cargo build --release --target aarch64-apple-ios 2>&1 | tee ios_build.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "::warning::iOS build failed (axum TCP server incompatible with iOS)"
+            cat ios_build.log | tail -30
+            echo '---'
+            echo 'iOS binary cannot run standalone; a shell .app wrapper is required for .ipa packaging'
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-aarch64
+          path: target/aarch64-apple-ios/release/noveldownloader
+
+  upload:
+    needs: [android, macos, ios]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: download android
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aarch64
+          path: out/android
+
+      - name: download macos
+        uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: out/macos
+
+      - name: download ios (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-aarch64
+          path: out/ios
+        continue-on-error: true
+
+      - name: upload to release v0.3.0
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.0
+          draft: false
+          fail_ci_if_error: false
+          fail_on_unmatched_files: false
+          files: |
+            out/android/noveldownloader
+            out/macos/noveldownloader-aarch64-macos
+            out/macos/noveldownloader-x86_64-macos
+            out/ios/noveldownloader
