@@ -21,11 +21,22 @@ jobs:
         with:
           ndk-version: r26c
           add-to-path: true
-      - name: configure NDK linker
+      - name: configure NDK toolchain
         run: |
+          # setup-ndk 把 NDK bin 加入 PATH，工具链在 $NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          PREBUILT="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CLANG="$PREBUILT/aarch64-linux-android21-clang"
+          CLANGPP="$PREBUILT/aarch64-linux-android21-clang++"
+          echo "NDK_HOME=$NDK_HOME"; echo "clang=$CLANG"; ls "$CLANG"
+          # 跨 step 持久化：cc-rs 找 C 编译器、cargo 找 linker 都依赖这些
+          {
+            echo "CC_aarch64_linux_android=$CLANG"
+            echo "CXX_aarch64_linux_android=$CLANGPP"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CLANG"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=$PREBUILT/llvm-ar"
+          } >> "$GITHUB_ENV"
           mkdir -p .cargo
-          echo '[target.aarch64-linux-android]' > .cargo/config.toml
-          echo 'linker = "aarch64-linux-android21-clang"' >> .cargo/config.toml
+          printf '[target.aarch64-linux-android]\nlinker = "%s"\n' "$CLANG" > .cargo/config.toml
           cat .cargo/config.toml
       - run: cargo build --release --target aarch64-linux-android
       - run: file target/aarch64-linux-android/release/noveldownloader
@@ -37,7 +48,7 @@ jobs:
           draft: false
           fail_on_unmatched_files: false
           files: |
-            target/aarch64-linux-android/release/noveldownloader
+            target/aarch64-linux-android/release/noveldownloader:noveldownloader-aarch64-linux-android
 
   macos:
     runs-on: macos-latest
@@ -89,4 +100,4 @@ jobs:
           draft: false
           fail_on_unmatched_files: false
           files: |
-            target/aarch64-apple-ios/release/noveldownloader
+            target/aarch64-apple-ios/release/noveldownloader:noveldownloader-ios-aarch64
