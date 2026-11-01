@@ -23,13 +23,22 @@ jobs:
           add-to-path: true
       - name: configure NDK toolchain
         run: |
-          # setup-ndk add-to-path 把 NDK bin 加入 PATH；用 which 定位（NDK/NDK_LLVM_BIN_DIR 变量名各版本不一）
-          CLANG="$(which aarch64-linux-android21-clang)"
-          CLANGPP="$(which aarch64-linux-android21-clang++)"
-          LLMAR="$(which llvm-ar)"
-          echo "clang=$CLANG"; echo "clangpp=$CLANGPP"; echo "ar=$LLMAR"
-          test -x "$CLANG" || { echo "clang not found in PATH (add-to-path failed?)"; exit 1; }
-          # 跨 step 持久化：cc-rs 找 C 编译器、cargo 找 linker 都依赖这些
+          # setup-ndk 设置的环境变量（各版本名可能不同，逐级 fallback）
+          if [ -n "$NDK_LLVM_PREBUILT" ]; then
+            TOOLS="$NDK_LLVM_PREBUILT/bin"
+          elif [ -n "$NDK" ]; then
+            TOOLS="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          elif [ -n "$NDK_HOME" ]; then
+            TOOLS="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          else
+            echo "No NDK vars found. NDK=$NDK NDK_HOME=$NDK_HOME NDK_LLVM_PREBUILT=$NDK_LLVM_PREBUILT"
+            exit 1
+          fi
+          CLANG="$TOOLS/aarch64-linux-android21-clang"
+          CLANGPP="$TOOLS/aarch64-linux-android21-clang++"
+          LLMAR="$TOOLS/llvm-ar"
+          echo "TOOLS=$TOOLS"; echo "clang=$CLANG"
+          ls -la "$CLANG"
           {
             echo "CC_aarch64_linux_android=$CLANG"
             echo "CXX_aarch64_linux_android=$CLANGPP"
@@ -39,7 +48,6 @@ jobs:
           mkdir -p .cargo
           printf '[target.aarch64-linux-android]\nlinker = "%s"\n' "$CLANG" > .cargo/config.toml
           cat .cargo/config.toml
-          env | grep -E 'CC_|CARGO_TARGET_AARCH64' || true
       - run: cargo build --release --target aarch64-linux-android
       - run: file target/aarch64-linux-android/release/noveldownloader
       - name: upload android asset (append)
