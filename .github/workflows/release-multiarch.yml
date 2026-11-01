@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASE_TAG: v0.3.0
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -21,15 +24,20 @@ jobs:
       - name: configure NDK linker
         run: |
           mkdir -p .cargo
-          echo "[target.aarch64-linux-android]" > .cargo/config.toml
-          echo "linker = \"aarch64-linux-android21-clang\"" >> .cargo/config.toml
+          echo '[target.aarch64-linux-android]' > .cargo/config.toml
+          echo 'linker = "aarch64-linux-android21-clang"' >> .cargo/config.toml
           cat .cargo/config.toml
       - run: cargo build --release --target aarch64-linux-android
       - run: file target/aarch64-linux-android/release/noveldownloader
-      - uses: actions/upload-artifact@v4
+      - name: upload android asset (append)
+        if: success()
+        uses: softprops/action-gh-release@v2
         with:
-          name: android-aarch64
-          path: target/aarch64-linux-android/release/noveldownloader
+          tag_name: ${{ env.RELEASE_TAG }}
+          draft: false
+          fail_on_unmatched_files: false
+          files: |
+            target/aarch64-linux-android/release/noveldownloader
 
   macos:
     runs-on: macos-latest
@@ -38,16 +46,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
-      - run: cargo build --release
-      - run: cargo build --release --target x86_64-apple-darwin
-      - name: rename artifacts
-        run: |
+      - name: build host (aarch64)
+        run: cargo build --release
+      - name: build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - run: |
           cp target/release/noveldownloader target/noveldownloader-aarch64-macos
           cp target/x86_64-apple-darwin/release/noveldownloader target/noveldownloader-x86_64-macos
-      - uses: actions/upload-artifact@v4
+      - name: upload macos assets (append)
+        if: success()
+        uses: softprops/action-gh-release@v2
         with:
-          name: macos
-          path: |
+          tag_name: ${{ env.RELEASE_TAG }}
+          draft: false
+          fail_on_unmatched_files: false
+          files: |
             target/noveldownloader-aarch64-macos
             target/noveldownloader-x86_64-macos
 
@@ -58,57 +71,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
-      - name: attempt iOS build
+      - name: build iOS
         run: |
           cargo build --release --target aarch64-apple-ios 2>&1 | tee ios_build.log
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "::warning::iOS build failed (axum TCP server incompatible with iOS)"
-            cat ios_build.log | tail -30
-            echo '---'
-            echo 'iOS binary cannot run standalone; a shell .app wrapper is required for .ipa packaging'
-            exit 1
+          status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then
+            echo "::warning::iOS build failed (TCP server may be incompatible with iOS sandbox). See log."
+            tail -25 ios_build.log
+            exit 0
           fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ios-aarch64
-          path: target/aarch64-apple-ios/release/noveldownloader
-
-  upload:
-    needs: [android, macos, ios]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: download android
-        uses: actions/download-artifact@v4
-        with:
-          name: android-aarch64
-          path: out/android
-
-      - name: download macos
-        uses: actions/download-artifact@v4
-        with:
-          name: macos
-          path: out/macos
-
-      - name: download ios (optional)
-        uses: actions/download-artifact@v4
-        with:
-          name: ios-aarch64
-          path: out/ios
-        continue-on-error: true
-
-      - name: upload to release v0.3.0
+          file target/aarch64-apple-ios/release/noveldownloader
+      - name: upload iOS asset (append, optional)
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.0
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
-          fail_ci_if_error: false
           fail_on_unmatched_files: false
           files: |
-            out/android/noveldownloader
-            out/macos/noveldownloader-aarch64-macos
-            out/macos/noveldownloader-x86_64-macos
-            out/ios/noveldownloader
+            target/aarch64-apple-ios/release/noveldownloader
