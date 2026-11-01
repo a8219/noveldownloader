@@ -746,7 +746,7 @@ async fn fetch_html(state: &AppState, url: &str) -> anyhow::Result<String> {
 }
 
 /// Extract `window.__INITIAL_STATE__` without a regex dependency.
-fn extract_state(html: &str) -> anyhow::Result<Value> {
+pub fn extract_state(html: &str) -> anyhow::Result<Value> {
     const MARKER: &str = "window.__INITIAL_STATE__=";
     let idx = html
         .find(MARKER)
