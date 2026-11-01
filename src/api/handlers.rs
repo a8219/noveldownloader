@@ -787,18 +787,41 @@ fn extract_state(html: &str) -> anyhow::Result<Value> {
     Ok(serde_json::from_str(&rest[..end])?)
 }
 
+/// Align with the workers `xhtmlToText`: block-level tags (`</p>`, `<br…>`,
+/// `</h1>`) become line breaks, all other tags are stripped, then HTML
+/// entities are decoded. This preserves paragraph separation in the web
+/// fallback path (chapter bodies are split by `<p>`, with no literal `\n`).
 fn strip_tags(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
-    let mut in_tag = false;
-
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            '\n' if !in_tag => out.push('\n'),
-            _ if !in_tag => out.push(ch),
-            _ => {}
+    let mut i = 0;
+    while i < html.len() {
+        let byte = html.as_bytes()[i];
+        if byte == b'<' {
+            if let Some(rel) = html[i..].find('>') {
+                let end = i + rel + 1;
+                let tag = html[i..end].to_ascii_lowercase();
+                let newline =
+                    matches!(tag.as_str(), "</p>" | "</h1>" | "<br>" | "<br/>" | "<br />");
+                if newline {
+                    out.push('\n');
+                }
+                i = end;
+                continue;
+            }
+            out.push('<');
+            i += 1;
+            continue;
         }
+        if !byte.is_ascii() {
+            let ch = html[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        }
+        let rest = &html[i..];
+        let next = rest.find('<').unwrap_or(rest.len());
+        out.push_str(&rest[..next]);
+        i += next;
     }
 
     out.replace("&nbsp;", " ")
@@ -807,10 +830,6 @@ fn strip_tags(html: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
-        .lines()
-        .map(|l| l.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n")
         .trim()
         .to_string()
 }
