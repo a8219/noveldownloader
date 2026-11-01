@@ -17,7 +17,15 @@ jobs:
       - uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26c
+          add-to-path: true
+      - name: configure NDK linker
+        run: |
+          mkdir -p .cargo
+          echo "[target.aarch64-linux-android]" > .cargo/config.toml
+          echo "linker = \"aarch64-linux-android21-clang\"" >> .cargo/config.toml
+          cat .cargo/config.toml
       - run: cargo build --release --target aarch64-linux-android
+      - run: file target/aarch64-linux-android/release/noveldownloader
       - uses: actions/upload-artifact@v4
         with:
           name: android-aarch64
