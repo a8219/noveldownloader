@@ -387,6 +387,81 @@ pub async fn api_proxy_pool() -> Response {
     Json(json!({ "code": 200, "pool": [] })).into_response()
 }
 
+// ---------------- 多书源 (七猫) ----------------
+
+/// 书源能力声明：`GET /api/caps`，不触发网络请求。
+pub async fn api_caps() -> Response {
+    Json(json!({
+        "code": 200,
+        "sources": crate::sources::caps(),
+    }))
+    .into_response()
+}
+
+/// 七猫搜索：`GET /api/search?key=&source=qimao`。
+pub async fn api_qimao_search(State(state): State<AppState>, Query(q): Params) -> Response {
+    let key = q.get("key").cloned().unwrap_or_default();
+    if key.trim().is_empty() {
+        return err(StatusCode::BAD_REQUEST, "key required");
+    }
+    match crate::sources::qimao::search(&state.http, &key).await {
+        Ok(list) if !list.is_empty() => Json(json!({
+            "code": 200, "from": "qimao",
+            "data": { "search_book_data_list": list, "total_count": list.len() }
+        }))
+        .into_response(),
+        Ok(_) => err(StatusCode::NOT_FOUND, "qimao search: no results"),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao search failed: {e}")),
+    }
+}
+
+/// 七猫目录：`GET /api/directory?book_id=&source=qimao`。
+pub async fn api_qimao_directory(
+    State(state): State<AppState>,
+    Query(q): Params,
+) -> Response {
+    let Some(book_id) = q.get("book_id").cloned().filter(|s| !s.is_empty()) else {
+        return err(StatusCode::BAD_REQUEST, "book_id required");
+    };
+    match crate::sources::qimao::directory(&state.http, &book_id).await {
+        Ok((book_name, author, lists)) => Json(json!({
+            "code": 200, "from": "qimao",
+            "data": {
+                "book_id": book_id,
+                "book_name": book_name,
+                "author": author,
+                "chapter_total": lists.len(),
+                "lists": lists,
+            }
+        }))
+        .into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao directory failed: {e}")),
+    }
+}
+
+/// 七猫正文：`GET /api/content?item_id=&book_id=&source=qimao`。
+pub async fn api_qimao_content(State(state): State<AppState>, Query(q): Params) -> Response {
+    let Some(item_id) = q.get("item_id").cloned().filter(|s| !s.is_empty()) else {
+        return err(StatusCode::BAD_REQUEST, "item_id required");
+    };
+    let book_id = q.get("book_id").cloned().unwrap_or_default();
+    match crate::sources::qimao::chapter_with_book(&state.http, &book_id, &item_id, "").await {
+        Ok(ch) => Json(json!({
+            "code": 200, "from": "qimao",
+            "data": {
+                "item_id": item_id,
+                "title": ch.title,
+                "book_name": ch.book_name,
+                "content": ch.content,
+                "paid": ch.paid,
+                "notice": if ch.paid { crate::sources::PAID_NOTICE } else { "" },
+            }
+        }))
+        .into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao content failed: {e}")),
+    }
+}
+
 // ---------------- library ----------------
 
 pub async fn list_library(State(state): State<AppState>) -> Response {

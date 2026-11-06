@@ -30,6 +30,11 @@ pub fn build_router(state: AppState) -> Router {
         // config / misc
         .route("/api/config", any(handlers::api_config))
         .route("/api/proxy/pool", any(handlers::api_proxy_pool))
+        // multi-source (qimao)
+        .route("/api/caps", get(handlers::api_caps))
+        .route("/api/qimao/search", get(handlers::api_qimao_search))
+        .route("/api/qimao/directory", get(handlers::api_qimao_directory))
+        .route("/api/qimao/content", get(handlers::api_qimao_content))
         // library / jobs
         .route(
             "/api/library",

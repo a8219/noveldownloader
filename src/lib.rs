@@ -8,6 +8,7 @@ pub mod library;
 pub mod read_page;
 pub mod search;
 pub mod server;
+pub mod sources;
 pub mod telegram;
 
 pub use config::Config;
