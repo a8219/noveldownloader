@@ -5565,6 +5565,157 @@ async function hConfig(req, env) {
   return json({ code: 405 }, 405);
 }
 
+// ========== 七猫中文网（免费书源） ==========
+// 七猫为免费阅读站（广告变现，全书免费）。若接口标记 is_vip != "0"（极少数
+// 版权受限作品），按统一策略返回 paid:true，正文为空，不做任何绕过。
+const QIMAO_BASE = "https://www.qimao.com";
+const QIMAO_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+function qmRef(book_id) { return `${QIMAO_BASE}/shuku/${book_id}/`; }
+
+async function qmGet(path, referer) {
+  const r = await fetchT(QIMAO_BASE + path, {
+    headers: {
+      "user-agent": QIMAO_UA,
+      "accept": "application/json, text/plain, */*",
+      "accept-language": "zh-CN,zh;q=0.9",
+      ...(referer ? { referer } : {}),
+    },
+  }, 20000);
+  if (!r.ok) throw new Error(`qimao HTTP ${r.status}`);
+  return r.json();
+}
+
+async function qmPost(path, referer, form) {
+  const r = await fetchT(QIMAO_BASE + path, {
+    method: "POST",
+    headers: {
+      "user-agent": QIMAO_UA,
+      "accept": "application/json, text/plain, */*",
+      "content-type": "application/x-www-form-urlencoded",
+      "referer": referer,
+      "origin": QIMAO_BASE,
+    },
+    body: new URLSearchParams(form).toString(),
+  }, 20000);
+  if (!r.ok) throw new Error(`qimao HTTP ${r.status}`);
+  return r.json();
+}
+
+// 从 <p>…</p> 抽正文，保留段落换行；实体解码 + 空白压缩。
+function qmParagraphs(html) {
+  if (!html) return "";
+  const out = [];
+  const re = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const text = m[1]
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\u0026quot;/g, '"')
+      .replace(/\u0026apos;/g, "'")
+      .replace(/\u0026#39;/g, "'")
+      .split(/\s+/).filter(Boolean).join(" ")
+      .trim();
+    if (text) out.push(text);
+  }
+  return out.length ? out.join("\n\n") : (html.replace(/<[^>]+>/g, "").trim());
+}
+
+// ---------- 七猫：搜索 ----------
+async function hQimaoSearch(env, key) {
+  if (!key) return json({ code: 400, message: "key required" }, 400);
+  try {
+    const v = await qmGet("/api/search/result?keyword=" + encodeURIComponent(key), QIMAO_BASE + "/");
+    const list = (v?.data?.search_list) || [];
+    if (!list.length) return json({ code: 404, message: "qimao search: no results" }, 404);
+    const items = list.map((b) => ({
+      book_id: String(b.book_id || ""),
+      book_name: b.title || b.book_name || "",
+      author: b.author || "",
+      book_abstract: b.intro || b.abstract || "",
+      thumb_url: b.image_link || b.cover || "",
+      creation_status: b.status ? String(b.status) : "",
+      source: "qimao",
+    })).filter((b) => b.book_id);
+    return json({ code: 200, from: "qimao", data: { search_book_data_list: items, total_count: items.length } });
+  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+}
+
+// ---------- 七猫：目录 ----------
+async function hQimaoDirectory(env, book_id) {
+  book_id = String(book_id || "").trim();
+  if (!book_id) return json({ code: 400, message: "book_id required" }, 400);
+  try {
+    const v = await qmGet("/api/book/chapter-list?book_id=" + encodeURIComponent(book_id), qmRef(book_id));
+    const arr = (v?.data?.chapters) || [];
+    if (!arr.length) return json({ code: 404, message: "qimao directory: no chapters" }, 404);
+    const lists = arr.map((c, i) => ({
+      item_id: String(c.id || ""),
+      title: c.title || "",
+      order: i + 1,
+      is_vip: String(c.is_vip || "0") !== "0",
+      words: c.words || 0,
+    })).filter((c) => c.item_id);
+    // 书名/作者：优先用第一章正文接口（同域同风控，稳定），失败则留空
+    let book_name = "", author = "";
+    try {
+      const first = lists[0].item_id;
+      const ch = await qmPost("/api/book/chapter", qmRef(book_id), { book_id, chapter_id: first });
+      book_name = ch?.data?.chapter?.book_title || "";
+      author = ch?.data?.chapter?.author || "";
+    } catch (e) { /* 忽略，正文接口失败不影响目录 */ }
+    return json({
+      code: 200, from: "qimao",
+      data: { book_id, book_name, author, chapter_total: lists.length, lists },
+    });
+  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+}
+
+// ---------- 七猫：正文 ----------
+async function hQimaoContent(env, item_id, book_id) {
+  item_id = String(item_id || "").trim();
+  if (!item_id) return json({ code: 400, message: "item_id required" }, 400);
+  book_id = String(book_id || "").trim();
+  try {
+    const form = book_id ? { book_id, chapter_id: item_id } : { chapter_id: item_id };
+    const ref = book_id ? qmRef(book_id) : QIMAO_BASE + "/";
+    const v = await qmPost("/api/book/chapter", ref, form);
+    const ch = v?.data?.chapter || {};
+    const isVip = String(ch.is_vip || "0") !== "0";
+    const raw = v?.data?.content || "";
+    const content = isVip && !raw.trim() ? "" : qmParagraphs(raw);
+    return json({
+      code: 200, from: "qimao",
+      data: {
+        item_id,
+        title: ch.title || "",
+        book_name: ch.book_title || "",
+        author: ch.author || "",
+        content,
+        paid: isVip,
+        notice: isVip ? "（付费章节 — 本项目仅支持免费内容，不提供付费章节下载）" : "",
+      },
+    });
+  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+}
+
+// ---------- 书源能力声明 ----------
+function hCaps(env) {
+  return json({
+    code: 200,
+    sources: {
+      fanqie: { free: true, paid: "cookie", enabled: true },
+      qimao: { free: true, paid: false, enabled: true },
+      qidian: { free: false, paid: false, enabled: false, note: "VIP 章节受 DRM/付费墙保护，不提供绕过" },
+      qqread: { free: false, paid: false, enabled: false, note: "VIP 章节受 DRM/付费墙保护，不提供绕过" },
+    },
+  });
+}
+
 
 // ========== 账号系统与管理面板（移植自 tgbot.py）==========
 const KV_USERS = "users";
@@ -6628,6 +6779,11 @@ export default {
       if (p === "/api/update") return hUpdateCheck(env, u.searchParams.get("book_id") || "");
       if (p === "/api/export/zip") return hExportZip(env, u.searchParams.get("book_id") || "", u.searchParams.get("format"), u.searchParams.get("start"), u.searchParams.get("count"));
       if (p === "/api/config") return hConfig(request, env);
+      // 七猫免费书源
+      if (p === "/api/caps") return hCaps(env);
+      if (p === "/api/qimao/search") return hQimaoSearch(env, u.searchParams.get("key") || "");
+      if (p === "/api/qimao/directory") return hQimaoDirectory(env, u.searchParams.get("book_id") || "");
+      if (p === "/api/qimao/content") return hQimaoContent(env, u.searchParams.get("item_id") || "", u.searchParams.get("book_id") || "");
       if (p === "/read" || p === "/read/" || p === "/read/index.html") return hRead(request, env);
       if (p === "/api/proxy/pool") {
         if (request.method === "GET") {
