@@ -1,67 +1,61 @@
 #!/usr/bin/env bash
-# NovelDownloader 一键安装（Linux / macOS / WSL）
-# 用法: curl -fsSL https://raw.githubusercontent.com/a8219/noveldownloader/main/install.sh | bash
+# NovelDownloader 一键安装（从源码构建，始终最新，含全部安全修复）
+#
+# 用法:
+#   curl -fsSL https://raw.githubusercontent.com/a8219/noveldownloader/main/install.sh | bash
+#
+# 说明:
+#   - 自成一体 / 无需后端的命令行下载器（Rust + Axum）
+#   - 支持任何 Rust 能编译到的平台（Linux / macOS / WSL / Android-Termux ...）
+#   - 直接 cargo 从源码构建 → 永远是包含最新安全修复的版本，不依赖预编译 release
 set -euo pipefail
 
-VERSION="0.3.0"
-BIN="noveldownloader"
-URL_BASE="https://github.com/a8219/noveldownloader/releases/download/v${VERSION}"
+REPO="https://github.com/a8219/noveldownloader.git"
+CRATE="noveldownloader"
 
-detect() {
-  local os arch
-  os=$(uname -s | tr '[:upper:]' '[:lower:]')
-  arch=$(uname -m)
-  case "$arch" in
-    x86_64|amd64)  arch="x86_64" ;;
-    aarch64|arm64) arch="aarch64" ;;
-    *) echo "Unsupported arch: $arch"; exit 1 ;;
-  esac
-  echo "${os}-${arch}"
-}
+echo "==> [1/3] 检查 Rust 工具链"
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "    未检测到 cargo，正在安装 stable 工具链 (rustup)..."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+  # shellcheck disable=SC1091
+  [ -f "${HOME}/.cargo/env" ] && source "${HOME}/.cargo/env"
+fi
+cargo --version
 
-install() {
-  local target
-  target=$(detect)
-  local bin_name="${BIN}"
-  case "$target" in
-    linux-x86_64)    bin_name="${BIN}-x86_64-linux-gnu" ;;
-    linux-aarch64)   bin_name="${BIN}-aarch64-linux-gnu" ;;
-    darwin-x86_64)   bin_name="${BIN}-x86_64-macos" ;;
-    darwin-aarch64)  bin_name="${BIN}-aarch64-macos" ;;
-    *) echo "No release for: $target"; exit 1 ;;
-  esac
+echo "==> [2/3] 从源码安装 ${CRATE} (release, 锁定依赖)"
+# --locked 使用已核验无未修复高危的 Cargo.lock；--force 覆盖旧版本
+cargo install "${CRATE}" \
+  --git "${REPO}" --branch main --locked --force \
+  --root "${HOME}/.cargo/bin"
 
-  echo "→ Installing ${bin_name} (${target})..."
-  local tmp
-  tmp=$(mktemp)
-  curl -fSL "$URL_BASE/${bin_name}" -o "$tmp"
-  install -m 755 "$tmp" "/usr/local/bin/${BIN}"
-  rm -f "$tmp"
-  echo "✓ ${BIN} installed to /usr/local/bin/${BIN}"
-}
+echo "==> [3/3] 完成"
+if ! command -v "${CRATE}" >/dev/null 2>&1; then
+  echo "    可执行文件位于: ${HOME}/.cargo/bin/${CRATE}"
+  echo "    若命令未生效，请确保 ${HOME}/.cargo/bin 在 PATH 中:"
+  echo '      export PATH="$HOME/.cargo/bin:$PATH"'
+else
+  echo "    已就绪: $(command -v "${CRATE}")"
+fi
 
-post() {
-  echo ""
-  echo "快速启动:"
-  echo "  ${BIN}                          # 默认 :8080"
-  echo "  BIND_ADDR=127.0.0.1:9090 ${BIN}  # 自定义端口"
-  echo ""
-  echo "必需环境变量 (用 export 或 .env):"
-  echo "  FANQIE_COOKIE       番茄登录 cookie (完整章节)"
-  echo "  FANQIE_PROXY_API    搜索代理 API (可选，提升搜索)"
-  echo "  TG_BOT_TOKEN        Telegram Bot Token (可选)"
-  echo "  FANQIE_ADMIN_USERNAME / FANQIE_ADMIN_PASSWORD  (可选，启用认证)"
-  echo ""
-  echo "启动后访问:"
-  echo "  /read           在线阅读"
-  echo "  /api/search     搜索"
-  echo "  /api/download   下载 TXT"
-  echo "  /tg/setup       注册 TG Bot webhook"
-}
+cat <<'EOF'
 
-main() {
-  install
-  post
-}
+------------------------------------------------------------
+快速启动:
+  noveldownloader                       # 默认监听 0.0.0.0:8080
+  BIND_ADDR=127.0.0.1:9090 noveldownloader
 
-main
+环境变量 (export 或 .env):
+  FANQIE_COOKIE           番茄登录 cookie（完整章节）
+  FANQIE_PROXY_API        搜索代理 API（可选）
+  TG_BOT_TOKEN            Telegram Bot Token（可选）
+  TG_WEBHOOK_SECRET       Webhook 校验串（公网部署务必设置）
+  FANQIE_ADMIN_USERNAME   管理员账号（设置后启用 HTTP Basic 认证）
+  FANQIE_ADMIN_PASSWORD   管理员密码
+
+启动后访问:
+  /read          在线阅读
+  /api/search    搜索
+  /api/download  下载 TXT
+  /tg/setup      注册 Telegram Bot webhook
+------------------------------------------------------------
+EOF
