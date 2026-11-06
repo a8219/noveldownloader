@@ -4964,10 +4964,21 @@ async function parseBookId(v) {
   if (!v) return "";
   let s = String(v).trim();
   if (/^\d{10,}$/.test(s)) return s;
-
   // 从混杂文本中提取 URL（例如「推荐一部好书《…》https://…」）
   const urlM = s.match(/https?:\/\/[^\s"'<>）)]+/);
   if (urlM) s = urlM[0];
+
+  // 七猫：qimao.com/shuku/<id>/ 或 m.qimao.com/shuku/<id>（6+ 位数字 ID）
+  // 注意：七猫书 ID 是 6~9 位（如 222767），须在 fanqie 之前匹配。
+  const qmM = s.match(/(?:m\.)?qimao\.com\/shuku\/(\d{4,})/);
+  if (qmM) return qmM[1];
+  // 七猫移动版也可能带 ?book_id=xxx
+  if (/qimao\.com/.test(s)) {
+    try {
+      const bid = new URL(s).searchParams.get("book_id");
+      if (bid && /^\d{4,}$/.test(bid)) return bid;
+    } catch (e) {}
+  }
 
   // changdunovel.com/t/xxx/ 短链接：读 302 Location 里的 book_id
   if (/changdunovel\.com\/t\//.test(s)) {
@@ -4985,7 +4996,6 @@ async function parseBookId(v) {
     } catch (e) {}
     return "";
   }
-
   // share-v2.html?book_id=xxx
   if (/changdunovel\.com\/wap\/share-v2\.html/.test(s)) {
     try {
@@ -4993,7 +5003,6 @@ async function parseBookId(v) {
       if (bid && /^\d{10,}$/.test(bid)) return bid;
     } catch (e) {}
   }
-
   // book-share?book_id=xxx
   if (/changdunovel\.com\/ug\/pages\/book-share/.test(s)) {
     try {
@@ -5001,12 +5010,16 @@ async function parseBookId(v) {
       if (bid && /^\d{10,}$/.test(bid)) return bid;
     } catch (e) {}
   }
-
   // fanqienovel.com/page/xxx 或 /reader/xxx
   const m = s.match(/\/(?:page|reader)\/(\d{10,})/);
   if (m) return m[1];
-
   return "";
+}
+
+// 从原始文本判断书源：'qimao' | 'fanqie'（默认）
+function sourceFromUrl(v) {
+  const s = String(v || "");
+  return /(?:m\.)?qimao\.com/.test(s) ? "qimao" : "fanqie";
 }
 
 
@@ -5703,6 +5716,16 @@ async function hQimaoContent(env, item_id, book_id) {
   } catch (e) { return json({ code: 502, message: String(e) }, 502); }
 }
 
+// ---------- 按书源分发目录/正文（供 TG 下载用） ----------
+async function directoryFor(env, source, bookId) {
+  if (source === "qimao") return await hQimaoDirectory(env, bookId);
+  return await hDirectory(env, bookId);
+}
+async function contentFor(env, source, itemId, bookId) {
+  if (source === "qimao") return await hQimaoContent(env, itemId, bookId);
+  return await hContent(env, itemId);
+}
+
 // ---------- 书源能力声明 ----------
 function hCaps(env) {
   return json({
@@ -6114,7 +6137,9 @@ async function tgSendDoc(token, chatId, filename, content, caption) {
   return fetch(`${TG_API}${token}/sendDocument`, { method: "POST", body: form });
 }
 
-async function fetchChaptersParallel(env, items, concurrency) {
+async function fetchChaptersParallel(env, items, concurrency, source, bookId) {
+  const src = source || "fanqie";
+  const bid = bookId || "";
   const out = [];
   for (let i = 0; i < items.length; i += concurrency) {
     const batch = items.slice(i, i + concurrency);
@@ -6123,7 +6148,7 @@ async function fetchChaptersParallel(env, items, concurrency) {
       let lastErr = "";
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const cj = await (await hContent(env, itemId)).json();
+          const cj = await (await contentFor(env, src, itemId, bid)).json();
           if (cj && cj.code === 200 && cj.data && cj.data.content) {
             const title = it.title || cj.data.title || itemId;
             return { id: itemId, title, ok: true, text: `## ${title}\n\n${cj.data.content}` };
@@ -6358,10 +6383,10 @@ async function tgHandleUpdate(env, token, update, origin) {
   // ---------- 下载 ----------
   const bookId = await parseBookId(text);
   if (!bookId) {
-    await tgSend(token, chatId, "⚠️ 无法识别小说URL或ID。\n\n请发送类似：https://fanqienovel.com/page/7615694942362422297");
+    await tgSend(token, chatId, "⚠️ 无法识别小说URL或ID。\n\n请发送类似：https://fanqienovel.com/page/7615694942362422297 或 https://m.qimao.com/shuku/222767/");
     return;
   }
-
+  const src = sourceFromUrl(text);  // 'qimao' | 'fanqie'
   if (!(await isAdmin(env, chatId))) {
     const users = await loadUsers(env);
     const u = users[String(chatId)];
@@ -6370,17 +6395,14 @@ async function tgHandleUpdate(env, token, update, origin) {
       return;
     }
   }
-
   const quota = await checkAndConsumeQuota(env, chatId);
   if (!quota.ok) { await tgSend(token, chatId, quota.msg); return; }
-
-  const dirJson = await (await hDirectory(env, bookId)).json();
+  const dirJson = await (await directoryFor(env, src, bookId)).json();
   if (dirJson.code !== 200) {
     await refundQuota(env, chatId);
     await tgSend(token, chatId, "获取目录失败: " + (dirJson.message || "未知错误"));
     return;
   }
-
   const lists = dirJson.data.lists || [];
   const bookName = dirJson.data.book_name || bookId;
   const total = lists.length;
@@ -6392,15 +6414,14 @@ async function tgHandleUpdate(env, token, update, origin) {
     await stub.fetch("https://do/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chatId, bookId, bookName, total, lists, cursor: 0, chunks: [], createdAt: Date.now() }),
+      body: JSON.stringify({ chatId, bookId, bookName, total, lists, cursor: 0, chunks: [], createdAt: Date.now(), source: src }),
     });
     await tgSend(token, chatId, `《${bookName}》共 ${total} 章，已启动加速下载（约 ${Math.ceil(total / 45)} 轮 × 数秒），完成后自动发送全书 TXT。`);
     return;
   }
-
   if (env?.FANQIE_KV) {
     const jobKey = `job:${bookId}:${chatId}`;
-    await env.FANQIE_KV.put(jobKey, JSON.stringify({ chatId, bookId, bookName, total, lists, cursor: 0, chunks: [], createdAt: Date.now() }));
+    await env.FANQIE_KV.put(jobKey, JSON.stringify({ chatId, bookId, bookName, total, lists, cursor: 0, chunks: [], createdAt: Date.now(), source: src }));
     let pendingList = [];
     try { pendingList = JSON.parse((await env.FANQIE_KV.get("jobs:pending")) || "[]"); } catch (e) {}
     if (!pendingList.includes(jobKey)) pendingList.push(jobKey);
@@ -6408,7 +6429,6 @@ async function tgHandleUpdate(env, token, update, origin) {
     await tgSend(token, chatId, `《${bookName}》共 ${total} 章，已加入队列。每分钟抓 45 章，预计约 ${Math.ceil(total / 45)} 分钟完成。`);
     return;
   }
-
   await refundQuota(env, chatId);
   await tgSend(token, chatId, "⚠️ 需要绑定 Durable Object 或 KV 才能下载。");
 }
@@ -6475,7 +6495,7 @@ async function handleCron(env) {
   const end = Math.min(start + BATCH, job.total);
   const slice = job.lists.slice(start, end);
 
-  const parts = await fetchChaptersParallel(env, slice, 10);
+  const parts = await fetchChaptersParallel(env, slice, 10, job.source, job.bookId);
   job.chunks = job.chunks || [];
   job.chunks.push(...parts);
   job.cursor = end;
@@ -6488,7 +6508,7 @@ async function handleCron(env) {
         return job.lists.find((l) => String(l.item_id) === cid) || { item_id: cid, title: cid };
       });
       try {
-        const retried = await fetchChaptersParallel(env, retryItems, 5);
+        const retried = await fetchChaptersParallel(env, retryItems, 5, job.source, job.bookId);
         for (let k = 0; k < retried.length; k++) {
           if (retried[k].ok) job.chunks[failedIdxs[k]] = retried[k];
         }
@@ -6597,7 +6617,7 @@ export class FanqieJob {
       const slice = job.lists.slice(start, end);
       let parts = [];
       try {
-        parts = await fetchChaptersParallel(this.env, slice, 10);
+        parts = await fetchChaptersParallel(this.env, slice, 10, job.source, job.bookId);
       } catch (e) {
         parts = slice.map((it) => ({ id: String(it.item_id), title: it.title || it.item_id, ok: false, text: `## ${it.title || it.item_id}\n\n[获取失败: ${String(e)}]` }));
       }
@@ -6642,7 +6662,7 @@ export class FanqieJob {
       return job.lists.find((l) => String(l.item_id) === cid) || { item_id: cid, title: cid };
     });
     try {
-      const retried = await fetchChaptersParallel(this.env, retryItems, 8);
+      const retried = await fetchChaptersParallel(this.env, retryItems, 8, job.source, job.bookId);
       for (let k = 0; k < retried.length; k++) {
         if (retried[k].ok) job.chunks[batchIdx[k]] = retried[k];
       }
