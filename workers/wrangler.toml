@@ -3,21 +3,22 @@ main = "worker.js"
 compatibility_date = "2026-10-24"
 compatibility_flags = ["nodejs_compat"]
 
-# ========== 方案 B：Durable Objects（秒级，推荐） ==========
+# ========== Durable Objects（declarative exports 流程，DO 已存在无需迁移） ==========
 [[durable_objects.bindings]]
 name = "FANQIE_DO"
 class_name = "FanqieJob"
 
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["FanqieJob"]
+[exports.FanqieJob]
+type = "durable-object"
+storage = "sqlite"
 
-# ========== 方案 A：KV + Cron（分钟级，兜底） ==========
-# 如不需要可整段注释；需要时执行:
-#   npx wrangler kv namespace create FANQIE_KV
+# ========== KV（兜底） ==========
 [[kv_namespaces]]
 binding = "FANQIE_KV"
-id = "<your-kv-id>"
+id = "f985ea76f2e747b8bbbe4c50b59eb168"
+
+[vars]
+FANQIE_ONLINE_READ = "1"
 
 [triggers]
 crons = ["* * * * *"]
