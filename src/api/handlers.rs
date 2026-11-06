@@ -447,27 +447,33 @@ pub async fn get_job(State(state): State<AppState>, Path(id): Path<String>) -> R
 
 // ---------------- telegram ----------------
 
-pub async fn tg_webhook(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
-    let Ok(update) = serde_json::from_slice::<Value>(&body) else {
-        return err(StatusCode::BAD_REQUEST, "invalid JSON");
-    };
-
+pub async fn tg_webhook(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
     // Verify the webhook secret token when configured — otherwise anyone who
-    // knows the URL can forge updates and drive the bot.
+    // knows the URL can forge updates and drive the bot. Telegram delivers the
+    // token via the `X-Telegram-Bot-API-Secret-Token` request header (set in
+    // `setWebhook`), NOT in the update body.
     if let Some(secret) = state
         .config
         .tg_webhook_secret
         .as_deref()
         .filter(|s| !s.is_empty())
     {
-        let provided = update
-            .get("secret_token")
-            .and_then(|v| v.as_str())
+        let provided = headers
+            .get("X-Telegram-Bot-API-Secret-Token")
+            .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         if provided != secret {
             return err(StatusCode::FORBIDDEN, "invalid secret_token");
         }
     }
+
+    let Ok(update) = serde_json::from_slice::<Value>(&body) else {
+        return err(StatusCode::BAD_REQUEST, "invalid JSON");
+    };
 
     let msg = update.get("message").or_else(|| update.get("channel_post"));
     let Some(msg) = msg else {
