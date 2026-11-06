@@ -411,15 +411,15 @@ pub async fn api_qimao_search(State(state): State<AppState>, Query(q): Params) -
         }))
         .into_response(),
         Ok(_) => err(StatusCode::NOT_FOUND, "qimao search: no results"),
-        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao search failed: {e}")),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("qimao search failed: {e}"),
+        ),
     }
 }
 
 /// 七猫目录：`GET /api/directory?book_id=&source=qimao`。
-pub async fn api_qimao_directory(
-    State(state): State<AppState>,
-    Query(q): Params,
-) -> Response {
+pub async fn api_qimao_directory(State(state): State<AppState>, Query(q): Params) -> Response {
     let Some(book_id) = q.get("book_id").cloned().filter(|s| !s.is_empty()) else {
         return err(StatusCode::BAD_REQUEST, "book_id required");
     };
@@ -435,7 +435,10 @@ pub async fn api_qimao_directory(
             }
         }))
         .into_response(),
-        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao directory failed: {e}")),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("qimao directory failed: {e}"),
+        ),
     }
 }
 
@@ -458,7 +461,10 @@ pub async fn api_qimao_content(State(state): State<AppState>, Query(q): Params) 
             }
         }))
         .into_response(),
-        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("qimao content failed: {e}")),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("qimao content failed: {e}"),
+        ),
     }
 }
 

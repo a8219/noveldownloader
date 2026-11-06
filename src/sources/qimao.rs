@@ -80,7 +80,10 @@ pub async fn directory(
     let mut author = String::new();
 
     // 目录
-    let url = format!("{BASE}/api/book/chapter-list?book_id={}", urlencode(book_id));
+    let url = format!(
+        "{BASE}/api/book/chapter-list?book_id={}",
+        urlencode(book_id)
+    );
     let resp = http
         .get(&url)
         .header(reqwest::header::USER_AGENT, DESKTOP_UA)
