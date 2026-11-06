@@ -108,8 +108,8 @@ iOS 用户请任选以下方案接入下载：
 
 ## 安全说明
 
-- 默认**不启用认证**（服务仅本机监听时安全）。若把 `BIND_ADDR` 指向公网，**务必**设置 `FANQIE_ADMIN_USERNAME` + `FANQIE_ADMIN_PASSWORD`，否则所有 API 与 TG 端点可被匿名调用。
-- 启用管理员后，所有 `/api/*` 与 `/tg/*`（除只读公开端点）需携带 HTTP Basic 认证；`/tg/webhook` 额外校验 `TG_WEBHOOK_SECRET`，未配置则拒绝一切 webhook。
+- 默认**不启用认证**（服务仅本机监听时安全）。若把 `BIND_ADDR` 指向公网，**务必**设置 `FANQIE_ADMIN_USERNAME` + `FANQIE_ADMIN_PASSWORD`，否则 `/api/*` 与 `/tg/setup` 可被匿名调用。
+- 启用管理员后，所有 `/api/*` 与 `/tg/setup` 需携带 HTTP Basic 认证；`/tg/webhook` 由 Telegram 服务器回调（不带 Basic 头），故豁免 Basic 认证，改为校验 `TG_WEBHOOK_SECRET`——**设置了 `TG_WEBHOOK_SECRET` 时**，webhook 必须携带匹配的 `secret_token`，否则返回 403。不设置该变量时 webhook 不校验（建议公网部署务必设置）。
 - `/api/config` 只返回布尔开关，不泄漏代理 URL / Cookie 等敏感值。
 - 文件 / ZIP 导出文件名经路径与 CRLF 过滤，防止路径遍历与响应头注入。
 - 依赖版本已通过 `cargo audit`（RustSec advisory-db）核验，无未修复高危。

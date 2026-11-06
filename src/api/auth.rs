@@ -18,7 +18,15 @@ use crate::server::AppState;
 fn is_public(path: &str) -> bool {
     matches!(
         path,
-        "/" | "/health" | "/read" | "/read/" | "/api/config" | "/api/proxy/pool"
+        "/"
+            | "/health"
+            | "/read"
+            | "/read/"
+            | "/api/config"
+            | "/api/proxy/pool"
+            // Telegram 服务器发 webhook 不会带 Basic auth；它靠
+            // TG_WEBHOOK_SECRET 做独立校验（见 handlers::tg_webhook）。
+            | "/tg/webhook"
     )
 }
 
