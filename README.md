@@ -63,7 +63,9 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/a8219/noveldownloader/main/install.sh | bash
 ```
-自动识别 Linux / macOS 架构，下载对应预编译二进制到 `/usr/local/bin/noveldownloader`。
+自动检测 Rust 工具链（缺失则装 rustup），然后 `cargo install noveldownloader --git ... --locked --release`
+从源码构建（锁定 Cargo.lock 版本），安装到 `~/.cargo/bin/noveldownloader`。
+支持任何 Rust 能编译到的平台（Linux / macOS / WSL / Termux …），无预编译 release。
 
 ### Docker Compose
 ```bash
