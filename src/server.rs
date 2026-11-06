@@ -49,15 +49,15 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         records: Arc::new(RwLock::new(HashMap::new())),
     };
 
-    let app: Router = routes::build_router(state);
-    let addr: std::net::SocketAddr = state_addr()?;
+    let app: Router = routes::build_router(state.clone());
+    let addr: std::net::SocketAddr = state_addr(&state.config.bind_addr)?;
     tracing::info!(%addr, "NovelDownloader listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
 
-fn state_addr() -> anyhow::Result<std::net::SocketAddr> {
-    let raw = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
-    Ok(raw.parse()?)
+fn state_addr(bind: &str) -> anyhow::Result<std::net::SocketAddr> {
+    let addr: std::net::SocketAddr = bind.parse()?;
+    Ok(addr)
 }

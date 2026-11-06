@@ -39,23 +39,31 @@
 - **MD3 在线阅读**：搜索、目录、正文、主题切换、字号调节
 
 ### API 接口
-| 路径 | 功能 |
-|---|---|
-| `GET /` | 服务状态与端点清单 |
-| `GET /health` | 健康检查 |
-| `GET /read` | Material Design 3 在线阅读页 |
-| `GET /api/search?key=` | 书名搜索 |
-| `GET /api/detail?book_id=` | 书籍详情 |
-| `GET /api/directory?book_id=` | 章节目录 |
-| `GET /api/content?item_id=` | 单章正文 |
-| `GET /api/download` | 分段文本下载 |
-| `GET /api/export` | 导出 txt / html / epub |
-| `GET /api/export/zip` | ZIP 打包导出 |
-| `GET /api/library` | 书库管理 |
-| `GET /api/jobs` | 下载任务 |
-| `POST /tg/webhook` | Telegram Webhook |
+| 路径 | 功能 | 认证 |
+|---|---|---|
+| `GET /` | 服务状态与端点清单 | 公开 |
+| `GET /health` | 健康检查 | 公开 |
+| `GET /read` | Material Design 3 在线阅读页 | 公开 |
+| `GET /api/config` | 配置状态（仅布尔，不泄漏 URL） | 公开 |
+| `GET /api/search?key=` | 书名搜索 | 管理员 |
+| `GET /api/detail?book_id=` | 书籍详情 | 管理员 |
+| `GET /api/directory?book_id=` | 章节目录 | 管理员 |
+| `GET /api/content?item_id=` | 单章正文 | 管理员 |
+| `GET /api/download` | 分段文本下载 | 管理员 |
+| `GET /api/export` | 导出 txt / html | 管理员 |
+| `GET /api/export/zip` | ZIP 打包导出 | 管理员 |
+| `GET /api/library` | 书库管理 | 管理员 |
+| `GET /api/jobs` | 下载任务 | 管理员 |
+| `POST /tg/webhook` | Telegram Webhook（校验 secret） | 签名 |
+| `GET /tg/setup` | 注册 TG Webhook | 管理员 |
 
 ## 部署
+
+### 一键安装（推荐）
+```bash
+curl -fsSL https://raw.githubusercontent.com/a8219/noveldownloader/main/install.sh | bash
+```
+自动识别 Linux / macOS 架构，下载对应预编译二进制到 `/usr/local/bin/noveldownloader`。
 
 ### Docker Compose
 ```bash
@@ -65,11 +73,10 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-### 原生 Rust
+### 源码编译
 ```bash
 cargo run --release
 ```
-
 访问 `http://127.0.0.1:8080/read`
 
 ## 环境变量
@@ -79,10 +86,33 @@ cargo run --release
 | `BIND_ADDR` | `0.0.0.0:8080` | 监听地址 |
 | `RUST_LOG` | `info,tower_http=info` | 日志级别 |
 | `REQUEST_TIMEOUT_SECS` | `45` | 请求超时 |
-| `FANQIE_COOKIE` | 空 | 可选会话 Cookie |
+| `FANQIE_COOKIE` | 空 | 可选会话 Cookie（解锁完整章节） |
 | `FANQIE_PROXY_API` | 空 | 可选搜索代理 |
 | `TG_BOT_TOKEN` | 空 | Telegram Bot Token |
+| `TG_WEBHOOK_SECRET` | 空 | Webhook 校验串（强烈建议设置） |
+| `FANQIE_ADMIN_USERNAME` | 空 | 管理员账号（设置后启用 HTTP Basic 认证） |
+| `FANQIE_ADMIN_PASSWORD` | 空 | 管理员密码 |
 | `FANQIE_ONLINE_READ` | `1` | 在线阅读开关 |
+
+## 移动端 / iOS 使用方式
+
+本项目提供的是**自成一体**的命令行 / 服务器二进制，不依赖任何外部后端。
+由于 iPhone 沙箱禁止 App 开 TCP 监听端口，**不提供 iOS App 壳**。
+iOS 用户请任选以下方案接入下载：
+
+1. **workers 版接 Telegram Bot**：部署 `workers/` 到 Cloudflare，配好 `TG_BOT_TOKEN` + `TG_WEBHOOK_SECRET`，访问 `/tg/setup` 注册 webhook，把书链接发给 Bot 即得 TXT 文件。
+2. **Rust 服务器版接 Telegram Bot**：在 VPS / 家用机跑 `noveldownloader` 二进制，同样配 `TG_BOT_TOKEN` + `TG_WEBHOOK_SECRET`，走 `/tg/setup`。
+3. **网页在线阅读**：浏览器（含 iPhone Safari）打开 `http://<服务器>:8080/read`，配 `FANQIE_COOKIE` 后可读完整正文。
+
+以上三种方案都**不经过 App Store、无需签名、无需上架**，iOS 端零门槛。
+
+## 安全说明
+
+- 默认**不启用认证**（服务仅本机监听时安全）。若把 `BIND_ADDR` 指向公网，**务必**设置 `FANQIE_ADMIN_USERNAME` + `FANQIE_ADMIN_PASSWORD`，否则所有 API 与 TG 端点可被匿名调用。
+- 启用管理员后，所有 `/api/*` 与 `/tg/*`（除只读公开端点）需携带 HTTP Basic 认证；`/tg/webhook` 额外校验 `TG_WEBHOOK_SECRET`，未配置则拒绝一切 webhook。
+- `/api/config` 只返回布尔开关，不泄漏代理 URL / Cookie 等敏感值。
+- 文件 / ZIP 导出文件名经路径与 CRLF 过滤，防止路径遍历与响应头注入。
+- 依赖版本已通过 `cargo audit`（RustSec advisory-db）核验，无未修复高危。
 
 ## 许可证
 

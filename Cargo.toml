@@ -5,18 +5,7 @@ edition = "2021"
 description = "Self-contained novel downloader server (Rust + Axum)"
 license = "AGPL-3.0-only"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[features]
-# Build the JNI bridge for Android. Enabled by CI via
-# `cargo build --target aarch64-linux-android --features jni --release`.
-# Also usable on host targets for type-checking:
-# `cargo check --features jni`.
-jni = ["dep:jni"]
-
 [dependencies]
-jni = { version = "0.21", optional = true }
 aes = "0.8"
 anyhow = "1.0"
 axum = { version = "0.7", features = ["macros"] }

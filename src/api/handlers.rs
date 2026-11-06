@@ -371,10 +371,13 @@ pub async fn api_update(State(state): State<AppState>, Query(q): Params) -> Resp
 // ---------------- config / misc ----------------
 
 pub async fn api_config(State(state): State<AppState>) -> Response {
+    // Only expose booleans — leaking the proxy API URL or base URL would give
+    // an unauthenticated caller a foothold for SSRF / info-gathering.
     Json(json!({
         "code": 200,
-        "proxy_api": state.config.proxy_api,
+        "proxy_configured": state.config.proxy_api.is_some(),
         "cookie_configured": state.config.fanqie_cookie.is_some(),
+        "tg_configured": state.config.tg_bot_token.is_some(),
         "upstream_configured": state.upstream_url.is_some(),
     }))
     .into_response()
@@ -448,6 +451,23 @@ pub async fn tg_webhook(State(state): State<AppState>, body: axum::body::Bytes) 
     let Ok(update) = serde_json::from_slice::<Value>(&body) else {
         return err(StatusCode::BAD_REQUEST, "invalid JSON");
     };
+
+    // Verify the webhook secret token when configured — otherwise anyone who
+    // knows the URL can forge updates and drive the bot.
+    if let Some(secret) = state
+        .config
+        .tg_webhook_secret
+        .as_deref()
+        .filter(|s| !s.is_empty())
+    {
+        let provided = update
+            .get("secret_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if provided != secret {
+            return err(StatusCode::FORBIDDEN, "invalid secret_token");
+        }
+    }
 
     let msg = update.get("message").or_else(|| update.get("channel_post"));
     let Some(msg) = msg else {
@@ -548,11 +568,13 @@ pub async fn tg_setup(State(state): State<AppState>) -> Response {
 
     let bot = TelegramBot::from_token(token);
     let hook = format!("{base}/tg/webhook");
-    let secret = std::env::var("TG_WEBHOOK_SECRET")
-        .ok()
+    let secret: Option<&str> = state
+        .config
+        .tg_webhook_secret
+        .as_deref()
         .filter(|s| !s.is_empty());
 
-    match bot.set_webhook(&hook, secret.as_deref()).await {
+    match bot.set_webhook(&hook, secret).await {
         Ok(()) => Json(json!({ "code": 200, "webhook": hook })).into_response(),
         Err(e) => err(StatusCode::BAD_GATEWAY, &format!("setWebhook failed: {e}")),
     }
@@ -839,7 +861,9 @@ fn pick_book_id(q: &HashMap<String, String>) -> Option<String> {
         .or_else(|| q.get("id"))
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .map(|s| extract_book_id(&s).unwrap_or(s))
+        // Only accept a real numeric book id; reject anything unparseable so
+        // malformed values cannot be concatenated into a malformed URL.
+        .and_then(|s| extract_book_id(&s))
 }
 
 fn extract_book_id(text: &str) -> Option<String> {
@@ -859,7 +883,10 @@ fn is_book_id(s: &str) -> bool {
 }
 
 fn is_path_safe(c: char) -> bool {
-    !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+    !matches!(
+        c,
+        '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\r' | '\n'
+    )
 }
 
 fn sanitize(name: &str) -> String {

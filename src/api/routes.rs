@@ -1,11 +1,13 @@
 //! Route table.
 
 use axum::{
+    middleware,
     routing::{any, get, post},
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
+use crate::api::auth::admin_auth;
 use crate::api::handlers;
 use crate::server::AppState;
 
@@ -45,7 +47,10 @@ pub fn build_router(state: AppState) -> Router {
         // telegram
         .route("/tg/webhook", post(handlers::tg_webhook))
         .route("/tg/setup", get(handlers::tg_setup))
-        .with_state(state)
+        // Admin basic-auth on all non-public routes (must be layered before
+        // `with_state` so the middleware and routes share the same state).
+        .layer(middleware::from_fn_with_state(state.clone(), admin_auth))
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }

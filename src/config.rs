@@ -7,6 +7,7 @@ pub struct Config {
     pub fanqie_cookie: Option<String>,
     pub proxy_api: Option<String>,
     pub tg_bot_token: Option<String>,
+    pub tg_webhook_secret: Option<String>,
     pub admin_username: Option<String>,
     pub admin_password: Option<String>,
     pub online_read: bool,
@@ -32,6 +33,7 @@ impl Config {
             fanqie_cookie: opt("FANQIE_COOKIE"),
             proxy_api: opt("FANQIE_PROXY_API").map(|v| v.trim_end_matches('/').to_string()),
             tg_bot_token: opt("TG_BOT_TOKEN"),
+            tg_webhook_secret: opt("TG_WEBHOOK_SECRET"),
             admin_username: opt("FANQIE_ADMIN_USERNAME"),
             admin_password: opt("FANQIE_ADMIN_PASSWORD"),
             online_read: env::var("FANQIE_ONLINE_READ")
