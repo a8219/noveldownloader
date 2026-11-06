@@ -5554,7 +5554,7 @@ async function hConfig(req, env) {
   if (req.method === "GET") {
     let v = env?.FANQIE_PROXY_API || "";
     if (env?.FANQIE_KV) v = (await env.FANQIE_KV.get("proxy_api")) || v;
-    return json({ code: 200, proxy_api: v, hardcoded: HARDCODED_PROXIES.length });
+    return json({ code: 200, proxy_configured: v.length>0, hardcoded: HARDCODED_PROXIES.length });
   }
   if (req.method === "POST") {
     if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
