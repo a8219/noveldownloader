@@ -6754,7 +6754,7 @@ function onlineReadEnabled(env) {
   return String(v == null ? "0" : v).trim() === "1";
 }
 
-function fixReadHtml(h){var BS=String.fromCharCode(92),SL=String.fromCharCode(47),LT=String.fromCharCode(60),GT=String.fromCharCode(62);var bad=LT+BS+SL+String.fromCharCode(115,99,114,105,112,116)+GT;var good=LT+SL+String.fromCharCode(115,99,114,105,112,116)+GT;return h.split(bad).join(good);}
+function fixReadHtml(h){return h.split("%%CS%%").join(String.fromCharCode(60,47,115,99,114,105,112,116,62));}
 function hRead(request, env) {
   if (!onlineReadEnabled(env)) {
     return new Response("在线阅读未启用（FANQIE_ONLINE_READ=0）", {
