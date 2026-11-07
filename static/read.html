@@ -118,10 +118,21 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   var q = new URLSearchParams(location.search);
   var bookId = q.get('book_id') || '';
   var itemId = q.get('item_id') || '';
+  var src = q.get('source') || 'fanqie';  // fanqie | qimao
   var app = document.getElementById('app');
   var titleEl = document.getElementById('title');
   var loading = document.getElementById('loading');
   var dirCache = [], dirMap = {}, detailCache = null, searchCache = null;
+  var SOURCES = {
+    fanqie: { name: '番茄小说', search: '/api/search?key=', directory: '/api/directory?book_id=', content: '/api/content?item_id=' },
+    qimao:  { name: '七猫中文网', search: '/api/qimao/search?key=', directory: '/api/qimao/directory?book_id=', content: '/api/qimao/content?item_id=' }
+  };
+  function ep(kind, id){
+    var s = SOURCES[src] || SOURCES.fanqie;
+    if (src === 'qimao' && kind === 'detail') return s.directory + encodeURIComponent(id || '');
+    if (src === 'qimao' && kind === 'content') return s.content + encodeURIComponent(id || '') + '&book_id=' + encodeURIComponent(bookId || '');
+    return s[kind] + encodeURIComponent(id || '');
+  }
 
   var savedTheme = localStorage.getItem('md3_theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
@@ -152,6 +163,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
     var qs = [];
     if (bookId) qs.push('book_id=' + encodeURIComponent(bookId));
     if (itemId) qs.push('item_id=' + encodeURIComponent(itemId));
+    if (src && src !== 'fanqie') qs.push('source=' + encodeURIComponent(src));
     history.pushState({}, '', qs.length ? '?' + qs.join('&') : location.pathname);
     render();
     window.scrollTo(0, 0);
@@ -159,12 +171,17 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
 
   function renderHome(){
     setTitle('在线阅读'); setNav('home');
+    var cur = SOURCES[src] || SOURCES.fanqie;
     app.innerHTML = '<div style="padding:16px 18px">' +
-      '<h1 style="font-size:22px;margin:0 0 4px">番茄小说</h1>' +
+      '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+      '<button class="mdc-button' + (src==='fanqie'?'':' text') + '" id="srcFanqie" style="flex:1;height:40px">番茄小说</button>' +
+      '<button class="mdc-button' + (src==='qimao'?'':' text') + '" id="srcQimao" style="flex:1;height:40px">七猫中文网</button>' +
+      '</div>' +
+      '<h1 style="font-size:22px;margin:0 0 4px">' + cur.name + '</h1>' +
       '<div style="font-size:14px;color:var(--md-sys-color-on-surface-variant)">快速在线阅读，支持书名搜索</div>' +
       '<div class="mdc-search-bar"><span class="search-icon">&#128269;</span><input id="bid" placeholder="输入书名、链接或书籍 ID" autocomplete="off"></div>' +
       '<button class="mdc-button" id="go" style="width:100%;height:48px;border-radius:24px">打开书籍</button>' +
-      '<div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:16px;line-height:1.8">提示：搜索需配置 FANQIE_PROXY_API 代理；也可以直接粘贴番茄小说链接或书籍 ID。</div>' +
+      '<div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:16px;line-height:1.8">提示：' + (src==='qimao' ? '可直接输入七猫书籍 ID（如 1655407）或书名搜索。' : '搜索需配置 FANQIE_PROXY_API 代理；也可以直接粘贴番茄小说链接或书籍 ID。') + '</div>' +
       '</div>';
     var open = function(){
       var v = (document.getElementById('bid').value || '').trim();
@@ -174,18 +191,23 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
     };
     document.getElementById('go').onclick = open;
     document.getElementById('bid').addEventListener('keydown', function(e){ if (e.key === 'Enter') open(); });
+    var f = document.getElementById('srcFanqie');
+    var qm = document.getElementById('srcQimao');
+    if (f) f.onclick = function(){ src='fanqie'; renderHome(); };
+    if (qm) qm.onclick = function(){ src='qimao'; renderHome(); };
   }
 
   function renderSearch(){
-    setTitle('搜索'); setNav('search');
-    app.innerHTML = '<div class="mdc-search-bar"><span class="search-icon">&#128269;</span><input id="sq" placeholder="搜索书名" autocomplete="off"><button class="mdc-icon-button" id="sgo" style="color:var(--md-sys-color-primary)">&#8594;</button></div>' +
+    setTitle('搜索' + (SOURCES[src]||SOURCES.fanqie).name); setNav('search');
+    app.innerHTML = '<div style="padding:12px 16px 4px;font-size:13px;color:var(--md-sys-color-on-surface-variant)">当前书源：' + (SOURCES[src]||SOURCES.fanqie).name + '</div>' +
+      '<div class="mdc-search-bar"><span class="search-icon">&#128269;</span><input id="sq" placeholder="搜索书名" autocomplete="off"><button class="mdc-icon-button" id="sgo" style="color:var(--md-sys-color-primary)">&#8594;</button></div>' +
       '<div id="results"></div>';
     var input = document.getElementById('sq');
     var doSearch = function(){
       var k = (input.value || '').trim();
       if (!k) return;
       show(true);
-      api('/api/search?key=' + encodeURIComponent(k)).then(function(r){
+      api(ep('search', k)).then(function(r){
         show(false);
         renderResults(r);
       }).catch(function(e){ show(false); document.getElementById('results').innerHTML = '<div class="tip">搜索失败：' + esc(e && e.message ? e.message : e) + '</div>'; });
@@ -231,8 +253,8 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   function renderBook(){
     show(true);
     Promise.all([
-      detailCache ? Promise.resolve(detailCache) : api('/api/detail?book_id=' + encodeURIComponent(bookId)),
-      api('/api/directory?book_id=' + encodeURIComponent(bookId))
+      detailCache ? Promise.resolve(detailCache) : api(ep('detail', bookId)),
+      api(ep('directory', bookId))
     ]).then(function(res){
       show(false);
       var d = res[0] || {}, dd = res[1] || {};
@@ -276,12 +298,13 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
 
   function renderChapter(){
     show(true);
-    api('/api/content?item_id=' + encodeURIComponent(itemId)).then(function(r){
+    api(ep('content', itemId)).then(function(r){
       show(false);
       var d = r.data || {};
       var title = d.title || (dirMap[itemId] && dirMap[itemId].title) || '章节';
       var text = d.content || '';
       if (!text) { app.innerHTML = '<div class="tip">本章获取失败或需登录，请稍后重试。</div>'; return; }
+      if (d.paid) { app.innerHTML = '<div class="tip">' + esc(d.notice || '本章为付费章节，本项目仅支持免费内容。') + '</div>'; return; }
       setTitle(title + (d.book_name ? ' - ' + d.book_name : ''));
       var idx = -1;
       for (var i = 0; i < dirCache.length; i++) if (String(dirCache[i].item_id) === String(itemId)) { idx = i; break; }
@@ -311,6 +334,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   window.addEventListener('popstate', function(){
     var p = new URLSearchParams(location.search);
     bookId = p.get('book_id') || ''; itemId = p.get('item_id') || '';
+    src = p.get('source') || 'fanqie';
     render();
   });
 
