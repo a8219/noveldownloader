@@ -5672,7 +5672,7 @@ async function hCiweimaoSearch(env, key) {
 // ---------- 刺猬猫：目录 ----------
 async function hCiweimaoDirectory(env, book_id) {
   book_id = String(book_id || "").trim();
-  if (!book_id) return json({ code: 400, message: "book_id required" }, 400);
+  if (!/^\d+$/.test(book_id)) return json({ code: 400, message: "book_id must be numeric" }, 400);
   try {
     const cookie = await ciwSession();
     const bookUrl = CIWEIMAO_BASE + "/book/" + book_id;
@@ -5709,8 +5709,9 @@ async function hCiweimaoDirectory(env, book_id) {
 // ---------- 刺猬猫：正文 ----------
 async function hCiweimaoContent(env, item_id, book_id) {
   item_id = String(item_id || "").trim();
-  if (!item_id) return json({ code: 400, message: "item_id required" }, 400);
+  if (!/^\d+$/.test(item_id)) return json({ code: 400, message: "item_id must be numeric" }, 400);
   book_id = String(book_id || "").trim();
+  if (book_id && !/^\d+$/.test(book_id)) return json({ code: 400, message: "book_id must be numeric" }, 400);
   try {
     const cookie = await ciwSession();
     const chapterUrl = CIWEIMAO_BASE + "/chapter/" + item_id;

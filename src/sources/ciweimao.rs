@@ -133,6 +133,9 @@ pub async fn directory(
     http: &reqwest::Client,
     book_id: &str,
 ) -> anyhow::Result<(String, String, Vec<Value>)> {
+    if book_id.is_empty() || !book_id.bytes().all(|b| b.is_ascii_digit()) {
+        anyhow::bail!("ciweimao book_id must be numeric");
+    }
     let cookie = session(http).await.unwrap_or_default();
     let book_url = format!("{BASE}/book/{book_id}");
 
@@ -216,8 +219,8 @@ pub async fn chapter_with_book(
     chapter_id: &str,
     fallback_title: &str,
 ) -> anyhow::Result<Fetched> {
-    if chapter_id.is_empty() {
-        anyhow::bail!("ciweimao chapter_id is empty");
+    if chapter_id.is_empty() || !chapter_id.bytes().all(|b| b.is_ascii_digit()) {
+        anyhow::bail!("ciweimao chapter_id must be numeric");
     }
     let cookie = session(http).await.unwrap_or_default();
     let chapter_url = format!("{BASE}/chapter/{chapter_id}");
