@@ -4,6 +4,7 @@
 //! |----------|------------|--------------------------------------------|
 //! | `fanqie` | 番茄小说   | 免费 + 已配置 `FANQIE_COOKIE` 可解锁的内容  |
 //! | `qimao`  | 七猫中文网 | 全书免费（广告变现），无付费墙              |
+//! | `ciweimao` | 刺猬猫   | 免费公开章节（正文双层 AES 加密，已实现解密）；付费/需登录章节不提供 |
 //!
 //! 起点 / QQ阅读的 VIP 章节由付费墙与 DRM 保护，本项目**不提供**任何绕过能力，
 //! 因此未接入那两个源；需要时请使用官方客户端阅读。
@@ -14,6 +15,7 @@
 //! 抓取结果返回 `paid: true`、`content` 为空，批量导出时写入 [`PAID_NOTICE`]。
 //! 任何书源都不做绕过尝试。
 
+pub mod ciweimao;
 pub mod qimao;
 
 use serde_json::{json, Value};
@@ -29,13 +31,15 @@ pub const PAID_NOTICE: &str = "（付费章节 — 本项目仅支持免费内�
 pub enum SourceKind {
     Fanqie,
     Qimao,
+    Ciweimao,
 }
 
 impl SourceKind {
-    /// 宽松解析：接受 `qimao` / `qm` / `七猫` 等写法，无法识别时回落到番茄。
+    /// 宽松解析：接受 `qimao` / `qm` / `七猫`、`ciweimao` / `ciw` / `刺猬猫` 等写法，无法识别时回落到番茄。
     pub fn parse(raw: Option<&str>) -> Self {
         match raw.unwrap_or("").trim().to_ascii_lowercase().as_str() {
             "qimao" | "qm" | "七猫" => Self::Qimao,
+            "ciweimao" | "ciw" | "刺猬猫" => Self::Ciweimao,
             _ => Self::Fanqie,
         }
     }
@@ -44,6 +48,7 @@ impl SourceKind {
         match self {
             Self::Fanqie => "fanqie",
             Self::Qimao => "qimao",
+            Self::Ciweimao => "ciweimao",
         }
     }
 
@@ -75,6 +80,7 @@ pub async fn directory(
 ) -> anyhow::Result<(String, String, Vec<Value>)> {
     match source {
         SourceKind::Qimao => qimao::directory(&state.http, book_id).await,
+        SourceKind::Ciweimao => ciweimao::directory(&state.http, book_id).await,
         SourceKind::Fanqie => anyhow::bail!("fanqie 请走 crate::api::handlers 内部实现"),
     }
 }
@@ -92,6 +98,9 @@ pub async fn chapter(
     match source {
         SourceKind::Qimao => {
             qimao::chapter_with_book(&state.http, book_id, item_id, fallback_title).await
+        }
+        SourceKind::Ciweimao => {
+            ciweimao::chapter_with_book(&state.http, book_id, item_id, fallback_title).await
         }
         SourceKind::Fanqie => anyhow::bail!("fanqie 请走 crate::api::handlers 内部实现"),
     }
@@ -152,6 +161,8 @@ pub fn caps() -> Value {
     json!({
         "fanqie": { "free": true, "paid": "cookie", "enabled": true },
         "qimao":  { "free": true, "paid": false,    "enabled": true },
+        "ciweimao": { "free": true, "paid": "login", "enabled": true,
+                      "note": "部分章节需登录，仅支持免费公开内容" },
         "qidian": { "free": false, "paid": false,   "enabled": false,
                     "note": "VIP 章节受 DRM/付费墙保护，不提供绕过" },
         "qqread": { "free": false, "paid": false,   "enabled": false,

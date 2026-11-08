@@ -468,6 +468,77 @@ pub async fn api_qimao_content(State(state): State<AppState>, Query(q): Params) 
     }
 }
 
+/// 刺猬猫搜索：`GET /api/ciweimao/search?key=`。
+/// 站内搜索接口需登录态（`get-search-book-list` 404），返回 501 提示直接粘贴链接/ID。
+pub async fn api_ciweimao_search(State(state): State<AppState>, Query(q): Params) -> Response {
+    let key = q.get("key").cloned().unwrap_or_default();
+    if key.trim().is_empty() {
+        return err(StatusCode::BAD_REQUEST, "key required");
+    }
+    match crate::sources::ciweimao::search(&state.http, &key).await {
+        Ok(_) => Json(json!({
+            "code": 501,
+            "from": "ciweimao",
+            "message": "ciweimao search: 站内搜索暂不可用，请直接粘贴刺猬猫书籍链接（https://www.ciweimao.com/book/100119445）或书籍 ID",
+        }))
+        .into_response(),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("ciweimao search failed: {e}"),
+        ),
+    }
+}
+
+/// 刺猬猫目录：`GET /api/ciweimao/directory?book_id=`。
+pub async fn api_ciweimao_directory(State(state): State<AppState>, Query(q): Params) -> Response {
+    let Some(book_id) = q.get("book_id").cloned().filter(|s| !s.is_empty()) else {
+        return err(StatusCode::BAD_REQUEST, "book_id required");
+    };
+    match crate::sources::ciweimao::directory(&state.http, &book_id).await {
+        Ok((book_name, author, lists)) => Json(json!({
+            "code": 200, "from": "ciweimao",
+            "data": {
+                "book_id": book_id,
+                "book_name": book_name,
+                "author": author,
+                "chapter_total": lists.len(),
+                "lists": lists,
+            }
+        }))
+        .into_response(),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("ciweimao directory failed: {e}"),
+        ),
+    }
+}
+
+/// 刺猬猫正文：`GET /api/ciweimao/content?item_id=&book_id=`。
+pub async fn api_ciweimao_content(State(state): State<AppState>, Query(q): Params) -> Response {
+    let Some(item_id) = q.get("item_id").cloned().filter(|s| !s.is_empty()) else {
+        return err(StatusCode::BAD_REQUEST, "item_id required");
+    };
+    let book_id = q.get("book_id").cloned().unwrap_or_default();
+    match crate::sources::ciweimao::chapter_with_book(&state.http, &book_id, &item_id, "").await {
+        Ok(ch) => Json(json!({
+            "code": 200, "from": "ciweimao",
+            "data": {
+                "item_id": item_id,
+                "title": ch.title,
+                "book_name": ch.book_name,
+                "content": ch.content,
+                "paid": ch.paid,
+                "notice": if ch.paid { crate::sources::PAID_NOTICE } else { "" },
+            }
+        }))
+        .into_response(),
+        Err(e) => err(
+            StatusCode::BAD_GATEWAY,
+            &format!("ciweimao content failed: {e}"),
+        ),
+    }
+}
+
 // ---------------- library ----------------
 
 pub async fn list_library(State(state): State<AppState>) -> Response {
