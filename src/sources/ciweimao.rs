@@ -81,7 +81,13 @@ async fn session(http: &reqwest::Client) -> anyhow::Result<String> {
         .iter()
         .filter_map(|v| v.to_str().ok())
         .find(|s| s.starts_with("ci_session="))
-        .map(|s| s.trim_start_matches("ci_session=").split(';').next().unwrap_or("").to_string())
+        .map(|s| {
+            s.trim_start_matches("ci_session=")
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
         .unwrap_or_default();
     Ok(sc)
 }
@@ -92,22 +98,26 @@ fn headers(cookie: &str, referer: &str, xhr: bool) -> reqwest::header::HeaderMap
     h.insert(
         reqwest::header::ACCEPT,
         if xhr {
-            "application/json, text/javascript, */*; q=0.01".parse().unwrap()
+            "application/json, text/javascript, */*; q=0.01"
+                .parse()
+                .unwrap()
         } else {
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".parse().unwrap()
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                .parse()
+                .unwrap()
         },
     );
     if !cookie.is_empty() {
-        h.insert(reqwest::header::COOKIE, format!("ci_session={cookie}").parse().unwrap());
+        h.insert(
+            reqwest::header::COOKIE,
+            format!("ci_session={cookie}").parse().unwrap(),
+        );
     }
     if !referer.is_empty() {
         h.insert(reqwest::header::REFERER, referer.parse().unwrap());
     }
     if xhr {
-        h.insert(
-            reqwest::header::ORIGIN,
-            BASE.parse().unwrap(),
-        );
+        h.insert(reqwest::header::ORIGIN, BASE.parse().unwrap());
     }
     h
 }
@@ -202,7 +212,7 @@ pub async fn directory(
 /// 单章正文（带 book_id 用于 Referer）。
 pub async fn chapter_with_book(
     http: &reqwest::Client,
-    book_id: &str,
+    _book_id: &str,
     chapter_id: &str,
     fallback_title: &str,
 ) -> anyhow::Result<Fetched> {
@@ -262,7 +272,10 @@ pub async fn chapter_with_book(
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string();
-        let paid = tip.contains("删除") || tip.contains("权限") || tip.contains("付费") || tip.contains("订阅");
+        let paid = tip.contains("删除")
+            || tip.contains("权限")
+            || tip.contains("付费")
+            || tip.contains("订阅");
         return Ok(Fetched {
             title: fallback_title.to_string(),
             book_name: String::new(),
@@ -313,8 +326,11 @@ pub async fn chapter_with_book(
                 }
             }
             if book_name.is_empty() {
-                if let Some(h) = crate::sources::between(&th, "<h1", ">") {
-                    let _ = h;
+                // 章节页 h1 通常是书名，可作兜底
+                if let Some(h1) = crate::sources::between(&th, "<h1", "</h1>") {
+                    if let Some(gt) = h1.find('>') {
+                        book_name = crate::sources::strip_html(&h1[gt + 1..]).trim().to_string();
+                    }
                 }
             }
         }
@@ -324,8 +340,8 @@ pub async fn chapter_with_book(
         title,
         book_name,
         author: String::new(),
-        content,
         paid: content.trim().is_empty(),
+        content,
     })
 }
 

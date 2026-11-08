@@ -36,7 +36,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/qimao/directory", get(handlers::api_qimao_directory))
         .route("/api/qimao/content", get(handlers::api_qimao_content))
         .route("/api/ciweimao/search", get(handlers::api_ciweimao_search))
-        .route("/api/ciweimao/directory", get(handlers::api_ciweimao_directory))
+        .route(
+            "/api/ciweimao/directory",
+            get(handlers::api_ciweimao_directory),
+        )
         .route("/api/ciweimao/content", get(handlers::api_ciweimao_content))
         // library / jobs
         .route(
