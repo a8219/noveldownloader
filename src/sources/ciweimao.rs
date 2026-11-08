@@ -14,7 +14,7 @@
 //! 付费/需登录章节：上游返回 `code != 100000`（如 `400001 此章节可能已删除`）或正文为空，
 //! 统一按 `paid: true` 返回，**不做任何绕过**。
 
-use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use serde_json::Value;
@@ -53,7 +53,7 @@ fn ciw_decrypt(content: &str, keys: &[String], access_key: &str) -> anyhow::Resu
 
         let mut buf = body.to_vec();
         let pt = Aes256CbcDec::new_from_slices(&key, &iv)?
-            .decrypt_padded_mut::<NoPadding>(&mut buf)
+            .decrypt_padded_mut::<Pkcs7>(&mut buf)
             .map_err(|_| anyhow::anyhow!("ciweimao: aes decrypt padding error"))?;
 
         if i < key_idx.len() - 1 {
