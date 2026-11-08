@@ -57,6 +57,16 @@
 | `POST /tg/webhook` | Telegram Webhook（校验 secret） | 签名 |
 | `GET /tg/setup` | 注册 TG Webhook | 管理员 |
 
+### 支持下载的平台（书源）
+
+| 平台 | 书源 ID | 在线读 | 下载 | 搜索 | 说明 |
+|---|---|---|---|---|---|
+| 番茄小说（Fanqie） | `fanqie` | ✅ | ✅ | ✅（需 `FANQIE_PROXY_API`） | 免费 + Cookie 解锁完整章节 |
+| 七猫中文网（Qimao） | `qimao` | ✅ | ✅ | ✅ | 免费书源，全书免费阅读 |
+| 刺猬猫（Ciweimao） | `ciweimao` | ✅ | ✅ | ⚠️（站内搜索暂不可用，请直接粘贴书籍链接 / ID） | 部分章节需登录，仅支持免费公开内容（正文接口为双层 AES 加密，已支持解密） |
+
+> 在线读：`/read?source=<书源ID>&book_id=<ID>`；下载：`/api/download?source=<书源ID>&book_id=<ID>&start=0&count=20`（Worker）或 Telegram Bot 直接发送书籍链接/ID。
+
 ## 部署
 
 ### 一键安装（推荐）
