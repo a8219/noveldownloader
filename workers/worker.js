@@ -5715,7 +5715,17 @@ function rateLimitMem(ip, bucket, limit, windowSec) {
 }
 async function rateLimit(env, request, bucket, limit, windowSec) {
   const ip = clientIp(request);
-  return rateLimitMem(ip, bucket, limit, windowSec);
+  if (!env?.FANQIE_DO) return { ok: true };
+  try {
+    const id = env.FANQIE_DO.idFromName("ratelimit");
+    const stub = env.FANQIE_DO.get(id);
+    const r = await stub.fetch("https://do/ratelimit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: bucket + "|" + ip, limit, window: windowSec })
+    });
+    return await r.json();
+  } catch (e) { return { ok: true }; }
 }
 function tooMany(retry) {
   return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
@@ -6893,6 +6903,21 @@ export class FanqieJob {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/ratelimit") {
+      const body = await request.json().catch(() => ({}));
+      const key = String(body.key || "unknown");
+      const limit = parseInt(body.limit, 10) || 10;
+      const windowSec = parseInt(body.window, 10) || 60;
+      const now = Date.now();
+      const rec = (await this.state.storage.get("rl:" + key)) || { start: now, n: 0 };
+      if (now - rec.start >= windowSec * 1000) { rec.start = now; rec.n = 0; }
+      rec.n++;
+      await this.state.storage.put("rl:" + key, rec);
+      const ok = rec.n <= limit;
+      const retry = ok ? 0 : Math.ceil((rec.start + windowSec * 1000 - now) / 1000);
+      return new Response(JSON.stringify({ ok, used: rec.n, limit, retry }), { headers: { "content-type": "application/json" } });
+    }
+
     if (url.pathname === "/cancel") {
       await this.state.storage.put("cancelled", true);
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
