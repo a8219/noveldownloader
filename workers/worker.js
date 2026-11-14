@@ -6871,7 +6871,11 @@ async function hTelegramWebhook(request, env, ctx) {
   const token = env?.TG_BOT_TOKEN;
   if (!token) return json({ ok: false, error: "TG_BOT_TOKEN not set" }, 500);
 
-  if (env?.TG_WEBHOOK_SECRET) {
+  if (!env?.TG_WEBHOOK_SECRET) {
+    // fail-closed: 未配置 secret 时拒绝所有 webhook（防伪造 update 建档/刷配额/代下载）
+    return json({ ok: false, error: "TG_WEBHOOK_SECRET not configured" }, 503);
+  }
+  {
     const hdr = request.headers.get("x-telegram-bot-api-secret-token");
     if (hdr !== env.TG_WEBHOOK_SECRET) return json({ ok: false }, 403);
   }
