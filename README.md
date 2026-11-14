@@ -105,6 +105,7 @@ cargo run --release
 | `FANQIE_ADMIN_USERNAME` | 空 | 管理员账号（设置后启用 HTTP Basic 认证） |
 | `FANQIE_ADMIN_PASSWORD` | 空 | 管理员密码 |
 | `FANQIE_ONLINE_READ` | `1` | 在线阅读开关 |
+| `FANQIE_ADMIN_TOKEN` | 空 | Worker 管理令牌（x-admin-token 请求头），设置后 /api/config、/api/proxy/pool、/tg/setup 的写操作需携带，否则 403 |
 
 ## 移动端 / iOS 使用方式
 
