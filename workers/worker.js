@@ -6893,7 +6893,10 @@ async function hTelegramSetup(request, env) {
   if (!token) return json({ ok: false, error: "TG_BOT_TOKEN not set" }, 500);
   const configured = String(env?.PUBLIC_HOST || "").trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
   const reqUrl = new URL(request.url);
-  const hostOk = configured ? (reqUrl.hostname === configured) : /\.workers\.dev$/.test(reqUrl.hostname);
+  const ALLOWED_WEBHOOK_HOSTS = ["workers.dev", "dpdns.org", "workers.v2ray.cc"];
+  const hostOk = configured
+    ? (reqUrl.hostname === configured)
+    : ALLOWED_WEBHOOK_HOSTS.some(d => reqUrl.hostname === d || reqUrl.hostname.endsWith("." + d));
   if (!hostOk) return json({ ok: false, error: "host not allowed" }, 400);
   const origin = configured ? ("https://" + configured) : reqUrl.origin;
   const body = { url: `${origin}/tg/webhook` };
