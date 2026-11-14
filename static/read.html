@@ -153,7 +153,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   };
 
   function show(on){ loading.className = on ? 'loading on' : 'loading'; }
-  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',''':'&#39;'}[c]; }); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function setTitle(s){ titleEl.textContent = s; document.title = s; }
   function api(path){ return fetch(path, { headers: { accept: 'application/json' } }).then(function(r){ return r.json(); }); }
   function setNav(view){ var items = document.querySelectorAll('.mdc-navigation-item'); for(var i=0;i<items.length;i++){ items[i].className = items[i].getAttribute('data-view')===view ? 'mdc-navigation-item active' : 'mdc-navigation-item'; } }

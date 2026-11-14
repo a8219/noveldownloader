@@ -4964,7 +4964,7 @@ const ALLOWED_BOOK_HOSTS = ['fanqienovel.com','changdunovel.com','qimao.com','ci
 function isAllowedBookHost(hostname) {
   var hh = String(hostname || '').toLowerCase();
   if (!hh) return false;
-  if (/^(localhost|127[.]|10[.]|169[.]254[.]|192[.]168[.])/.test(hh)) return false;
+  if (/^(0[.]0[.]0[.]0|localhost|127[.]|10[.]|169[.]254[.]|192[.]168[.]|100[.](6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])[.]|198[.](1[89])[.])/.test(hh)) return false;
   if (/^172[.](1[6-9]|2[0-9]|3[01])[.]/.test(hh)) return false;
   if (hh.indexOf(':') >= 0) return false;
   for (var i = 0; i < ALLOWED_BOOK_HOSTS.length; i++) {
@@ -4978,13 +4978,19 @@ async function parseBookId(v) {
   let s = String(v).trim();
   if (/^\d{10,}$/.test(s)) return s;
   // 从混杂文本中提取 URL（例如「推荐一部好书《…》https://…」）
-  const urlM = s.match(/https?:\/\/[^\s"'<>）)]+/);
+  const urlM = s.match(/https?:\/\/[^\s"'<>）)]+/i);
   if (urlM) {
     s = urlM[0];
     try {
       var uu = new URL(s);
       if (!/^https?:$/.test(uu.protocol) || !isAllowedBookHost(uu.hostname)) return '';
     } catch (e) { return ''; }
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    try {
+      var uu2 = new URL(s);
+      if (!/^https?:$/.test(uu2.protocol) || !isAllowedBookHost(uu2.hostname)) return '';
+    } catch (e2) { return ''; }
   }
 
   // 刺猬猫：ciweimao.com/book/<id> 或 /chapter/<id>（9 位数字 ID）
@@ -5586,11 +5592,17 @@ async function hExportZip(env, book_id, format, start, count) {
   });
 }
 
+function timingEqual(a, b) {
+  if (a.length !== b.length) return false;
+  var r = 0;
+  for (var i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
 function adminOk(req, env) {
   var t = env && env.FANQIE_ADMIN_TOKEN;
   if (!t) return false;
   var hh = req.headers.get('x-admin-token') || '';
-  return hh.length === t.length && hh === t;
+  return timingEqual(hh, t);
 }
 async function hConfig(req, env) {
   if (req.method === "GET") {
@@ -7020,6 +7032,7 @@ export default {
       if (p === "/api/qimao/content") return hQimaoContent(env, u.searchParams.get("item_id") || "", u.searchParams.get("book_id") || "");
       if (p === "/read" || p === "/read/" || p === "/read/index.html") return hRead(request, env);
       if (p === "/api/proxy/pool") {
+        if (!adminOk(request, env)) return json({ code: 403, message: "admin token required" }, 403);
         if (request.method === "GET") {
           if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
           const pool = JSON.parse((await env.FANQIE_KV.get(PROXY_KV_KEY)) || "[]");
@@ -7041,7 +7054,10 @@ export default {
         return json({ code: 405 }, 405);
       }
       if (p === "/tg/webhook" && request.method === "POST") return hTelegramWebhook(request, env, ctx);
-      if (p === "/tg/setup") return hTelegramSetup(request, env);
+      if (p === "/tg/setup") {
+        if (!adminOk(request, env)) return json({ code: 403, message: "admin token required" }, 403);
+        return hTelegramSetup(request, env);
+      }
       return json({ code: 404 }, 404);
     } catch (e) { return json({ code: 500, message: String(e) }, 500); }
   },
