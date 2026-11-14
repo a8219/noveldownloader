@@ -5627,11 +5627,37 @@ async function hAuth(request, env){
     const b = await request.json().catch(()=>({}));
     const account = String(b.account||'').trim();
     const pass = String(b.password||'');
+    if(!account || !pass) return json({code:400,message:'请输入账号和密码'},400);
+    // ---- 失败限流（按账号，10 分钟内 5 次失败则锁 15 分钟）----
+    const fails = await kvGet(env, KV_AUTH_FAILS, {});
+    const rec = fails[account] || { n: 0, first: 0, locked_until: 0 };
+    const now = Date.now();
+    if(rec.locked_until && now < rec.locked_until){
+      const mins = Math.ceil((rec.locked_until - now) / 60000);
+      return json({code:429,message:'尝试次数过多，请 '+mins+' 分钟后再试'},429);
+    }
+    // ---- 管理员：走环境变量明文比对（与 TG 一致）----
+    const admU = env?.FANQIE_ADMIN_USERNAME || '';
+    const admP = env?.FANQIE_ADMIN_PASSWORD || '';
+    if(admU && admP && account === admU && pass === admP){
+      delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
+      const tok = await issueWebToken(env, account);
+      return json({code:200, token: tok, account: account, admin: true});
+    }
+    // ---- 普通用户：users KV ----
     const users = await loadUsers(env);
     const u = findUserByAccount(users, account);
-    if(!u || u.pwd_hash !== await hashPw(pass)) return json({code:401,message:'账号或密码错误'}, 401);
-    const tok = await issueWebToken(env, u.account);
-    return json({code:200, token: tok, account: u.account});
+    if(u && u.pwd_hash === await hashPw(pass)){
+      delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
+      const tok = await issueWebToken(env, u.account);
+      return json({code:200, token: tok, account: u.account});
+    }
+    // ---- 失败计数 ----
+    if(!rec.first || now - rec.first > 10*60*1000){ rec.n = 1; rec.first = now; }
+    else rec.n++;
+    if(rec.n >= 5){ rec.locked_until = now + 15*60*1000; rec.n = 0; rec.first = 0; }
+    fails[account] = rec; await kvSet(env, KV_AUTH_FAILS, fails);
+    return json({code:401,message:'账号或密码错误'},401);
   }
   if(request.method==='GET'){
     const h2 = request.headers.get('x-auth-token')||'';
@@ -5640,6 +5666,7 @@ async function hAuth(request, env){
   }
   return json({code:405},405);
 }
+
 async function hHistory(request, env){
   const h2 = request.headers.get('x-auth-token')||'';
   const acc = await webAccount(env, h2);
@@ -6019,6 +6046,7 @@ const KV_LOGIN_LOG = "login_log";
 const KV_ADMIN_SESSIONS = "admin_sessions";
 const KV_LOGIN_SESSIONS = "login_sessions";
 const KV_WEB_SESSIONS = "web_sessions";
+const KV_AUTH_FAILS = "auth_fails";
 const DEFAULT_DAILY_LIMIT = 5;
 const DEFAULT_WELCOME = "📖 番茄小说下载器\n\n发送小说链接即可下载完整 TXT。";
 
