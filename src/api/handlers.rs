@@ -351,6 +351,13 @@ pub async fn api_update(State(state): State<AppState>, Query(q): Params) -> Resp
     };
     let total = lists.len();
     let mut records = state.records.write().await;
+    // cap: bound the table so anonymous requests cannot grow memory unbounded
+    if records.len() >= 5000 && !records.contains_key(&book_id) {
+        // drop an arbitrary subset (oldest unknown) to stay bounded
+        let drop_n = records.len() - 4999;
+        let victims: Vec<String> = records.keys().take(drop_n).cloned().collect();
+        for v in victims { records.remove(&v); }
+    }
     let last_seen = records.get(&book_id).copied().unwrap_or(0);
     if total > last_seen {
         records.insert(book_id.clone(), total);
@@ -554,11 +561,13 @@ pub async fn add_library(State(state): State<AppState>, Json(body): Json<Value>)
     else {
         return err(StatusCode::BAD_REQUEST, "book_id required");
     };
-    state
-        .library
-        .write()
-        .await
-        .insert(id.to_string(), body.clone());
+    {
+        let mut lib = state.library.write().await;
+        // cap: bound library size so anonymous writes cannot exhaust memory
+            return err(StatusCode::TOO_MANY_REQUESTS, "library is full");
+        }
+        lib.insert(id.to_string(), body.clone());
+    }
     Json(json!({ "code": 200, "data": body })).into_response()
 }
 
@@ -581,7 +590,21 @@ pub async fn create_job(State(state): State<AppState>, Json(body): Json<Value>) 
         "created_at": now_secs(),
     });
     let id = job["id"].as_str().unwrap_or_default().to_string();
-    state.jobs.write().await.insert(id, job.clone());
+    {
+        let mut jobs = state.jobs.write().await;
+        // cap: keep at most 500 jobs, drop oldest by created_at
+        if jobs.len() >= 500 {
+            let mut keys: Vec<(String, i64)> = jobs
+                .iter()
+                .map(|(k, v)| (k.clone(), v.get("created_at").and_then(|t| t.as_i64()).unwrap_or(0)))
+                .collect();
+            keys.sort_by_key(|(_, t)| *t);
+            for (k, _) in keys.into_iter().take(jobs.len().saturating_sub(499)) {
+                jobs.remove(&k);
+            }
+        }
+        jobs.insert(id, job.clone());
+    }
     Json(json!({ "code": 202, "data": job })).into_response()
 }
 

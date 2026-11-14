@@ -412,17 +412,6 @@ if (ttsBtn) ttsBtn.onclick = function(){
     if (cw) cw.onclick = function(){ src='ciweimao'; renderHome(); };
   }
 
-  function fanqieClientSearch(k){
-    var url = 'https://fanqienovel.com/api/author/search/search_book/v1?query_word=' + encodeURIComponent(k) + '&query_type=1&page_count=10&page_index=0';
-    return fetch(url, { credentials: 'include', headers: { 'accept': 'application/json' } })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        var list = (d && d.data && d.data.search_book_data_list) || [];
-        if (!list.length) throw new Error('empty');
-        return { code: 200, from: 'fanqie-web', data: { search_book_data_list: list } };
-      })
-      .catch(function(){ return api(ep('search', k)); });
-  }
   function renderSearch(){
     setTitle('搜索' + (SOURCES[src]||SOURCES.fanqie).name); setNav('search');
     app.innerHTML = '<div style="padding:12px 16px 4px;font-size:13px;color:var(--md-sys-color-on-surface-variant)">当前书源：' + (SOURCES[src]||SOURCES.fanqie).name + '</div>' +
@@ -433,7 +422,7 @@ if (ttsBtn) ttsBtn.onclick = function(){
       var k = (input.value || '').trim();
       if (!k) return;
       show(true);
-      (src === 'fanqie' ? fanqieClientSearch(k) : api(ep('search', k))).then(function(r){
+      api(ep('search', k)).then(function(r){
         show(false);
         renderResults(r);
       }).catch(function(e){ show(false); document.getElementById('results').innerHTML = '<div class="tip">搜索失败：' + esc(e && e.message ? e.message : e) + '</div>'; });
