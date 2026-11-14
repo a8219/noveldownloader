@@ -257,7 +257,17 @@ function histNormId(x){
 }
 function histSave(bookId, bookName, itemId, chTitle){
   var nid = histNormId(bookId); if(nid) bookId = nid;
-  if(!bookId) return;try{var hk='nd_hist_'+(acctName||'local');var ha=JSON.parse(localStorage.getItem(hk)||'{}');ha[bookId]={book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',ts:Date.now(),source:src};var hks=Object.keys(ha);if(hks.length>200){hks.sort(function(a,b){return(ha[a].ts||0)-(ha[b].ts||0)});for(var hi=0;hi<hks.length-200;hi++)delete ha[hks[hi]];}localStorage.setItem(hk,JSON.stringify(ha))}catch(eH){}if(!acctToken) return;
+  if(!bookId) return;
+  // 分享文案里没有数字 ID：用章节 ID 反查真实 book_id
+  if(!/^\d{10,}$/.test(bookId) && itemId){
+    fetch('/api/content?item_id=' + encodeURIComponent(itemId), { headers: { accept: 'application/json' } })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var real = (d && d.data && d.data.book_id) || "";
+        if(real) histSave(String(real), bookName, itemId, chTitle);
+      }).catch(function(){});
+    return;
+  }try{var hk='nd_hist_'+(acctName||'local');var ha=JSON.parse(localStorage.getItem(hk)||'{}');ha[bookId]={book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',ts:Date.now(),source:src};var hks=Object.keys(ha);if(hks.length>200){hks.sort(function(a,b){return(ha[a].ts||0)-(ha[b].ts||0)});for(var hi=0;hi<hks.length-200;hi++)delete ha[hks[hi]];}localStorage.setItem(hk,JSON.stringify(ha))}catch(eH){}if(!acctToken) return;
   fetch('/api/history',{method:'POST',headers:Object.assign({'content-type':'application/json'},acctHdr()),body:JSON.stringify({book_id:bookId,book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',source:src})}).catch(function(){});
 }
 var acctBtnEl=document.getElementById('acctBtn');
@@ -527,7 +537,7 @@ if (ttsBtn) ttsBtn.onclick = function(){
       if (!text) { app.innerHTML = '<div class="tip">本章获取失败或需登录，请稍后重试。</div>'; return; }
       if (d.paid) { app.innerHTML = '<div class="tip">' + esc(d.notice || '本章为付费章节，本项目仅支持免费内容。') + '</div>'; return; }
       setTitle(title + (d.book_name ? ' - ' + d.book_name : ''));
-      try { histSave(bookId, d.book_name || '', itemId, title); } catch (e) {}
+      try { histSave(d.book_id || bookId, d.book_name || '', itemId, title); } catch (e) {}
       var idx = -1;
       for (var i = 0; i < dirCache.length; i++) if (String(dirCache[i].item_id) === String(itemId)) { idx = i; break; }
       var html = '<div style="padding:14px 18px 0"><div style="font-size:18px;font-weight:600">' + esc(title) + '</div>';
