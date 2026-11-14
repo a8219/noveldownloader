@@ -26,6 +26,7 @@ pub struct AppState {
     pub jobs: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     pub device: Arc<RwLock<Option<DeviceCache>>>,
     pub records: Arc<RwLock<HashMap<String, usize>>>,
+    pub web: Arc<crate::web_account::WebAccountStore>,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -47,6 +48,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         jobs: Arc::new(RwLock::new(HashMap::new())),
         device: Arc::new(RwLock::new(None)),
         records: Arc::new(RwLock::new(HashMap::new())),
+        web: Arc::new(crate::web_account::WebAccountStore::new(
+            std::env::var("DATA_DIR").unwrap_or_else(|_| ".".to_string()),
+        )),
     };
 
     let app: Router = routes::build_router(state.clone());

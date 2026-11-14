@@ -10,6 +10,7 @@ pub mod search;
 pub mod server;
 pub mod sources;
 pub mod telegram;
+pub mod web_account;
 
 pub use config::Config;
 pub use server::{AppState, DeviceCache};

@@ -32,6 +32,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/proxy/pool", any(handlers::api_proxy_pool))
         // multi-source (qimao / ciweimao)
         .route("/api/caps", get(handlers::api_caps))
+        // web account + reading history
+        .route("/api/auth", axum::routing::any(handlers::api_auth))
+        .route("/api/history", axum::routing::any(handlers::api_history))
         .route("/api/qimao/search", get(handlers::api_qimao_search))
         .route("/api/qimao/directory", get(handlers::api_qimao_directory))
         .route("/api/qimao/content", get(handlers::api_qimao_content))

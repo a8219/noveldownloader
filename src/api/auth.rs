@@ -35,10 +35,14 @@ pub async fn admin_auth(
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // No admin credentials configured → the service is open (documented).
+    // Fail-closed: no admin credentials → refuse protected routes.
+    // (public endpoints below are still allowed so /health etc keep working)
     let (Some(user), Some(pass)) = (&state.config.admin_username, &state.config.admin_password)
     else {
-        return Ok(next.run(req).await);
+        if is_public(req.uri().path()) {
+            return Ok(next.run(req).await);
+        }
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
     };
 
     // Public endpoints never need auth.

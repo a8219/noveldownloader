@@ -25,7 +25,7 @@ impl Config {
                 .filter(|v| !v.is_empty())
         }
         Self {
-            bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
+            bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into()),
             request_timeout_secs: env::var("REQUEST_TIMEOUT_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())

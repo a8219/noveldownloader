@@ -1089,3 +1089,118 @@ fn err(status: StatusCode, message: &str) -> Response {
     )
         .into_response()
 }
+
+// ---------- 网页账号互通（与 TG 同一账号） ----------
+
+fn bearer_or_header(headers: &axum::http::HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+/// `POST /api/auth` 登录；`GET /api/auth` 查询当前登录态。
+pub async fn api_auth(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+) -> Response {
+    use axum::body::Bytes;
+    let method = req.method().clone();
+    let token_hdr = bearer_or_header(req.headers(), "x-auth-token");
+
+    if method == axum::http::Method::GET {
+        let acc = state.web.account_of(&token_hdr).await;
+        return Json(json!({ "code": 200, "account": acc })).into_response();
+    }
+    if method != axum::http::Method::POST {
+        return err(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+    }
+
+    let body: Bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024).await {
+        Ok(b) => b,
+        Err(_) => return err(StatusCode::BAD_REQUEST, "bad body"),
+    };
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_else(|_| json!({}));
+    let account = v.get("account").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let password = v.get("password").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if account.is_empty() || password.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "请输入账号和密码");
+    }
+
+    // 管理员：环境变量明文比对（与 TG /login 一致）
+    let adm_u = state.config.admin_username.clone().unwrap_or_default();
+    let adm_p = state.config.admin_password.clone().unwrap_or_default();
+    if !adm_u.is_empty() && !adm_p.is_empty() && account == adm_u && password == adm_p {
+        let tok = state.web.issue_token(&account).await;
+        return Json(json!({ "code": 200, "token": tok, "account": account, "admin": true }))
+            .into_response();
+    }
+
+    // 触发一次磁盘重载，让 TG /signup 新注册的账号立即可登录
+    state.web.reload_users().await;
+    match state.web.login(&account, &password).await {
+        Ok(tok) => Json(json!({ "code": 200, "token": tok, "account": account })).into_response(),
+        Err(msg) => {
+            let code = if msg.contains("过多") {
+                StatusCode::TOO_MANY_REQUESTS
+            } else {
+                StatusCode::UNAUTHORIZED
+            };
+            err(code, &msg)
+        }
+    }
+}
+
+/// `GET /api/history` 列出阅读历史；`POST /api/history` 记录进度。
+pub async fn api_history(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+) -> Response {
+    use axum::body::Bytes;
+    let method = req.method().clone();
+    let tok = bearer_or_header(req.headers(), "x-auth-token");
+    let acc = state.web.account_of(&tok).await;
+    if acc.is_empty() {
+        return err(StatusCode::UNAUTHORIZED, "未登录");
+    }
+
+    if method == axum::http::Method::GET {
+        let list = state.web.history_list(&acc).await;
+        return Json(json!({ "code": 200, "data": list })).into_response();
+    }
+    if method != axum::http::Method::POST {
+        return err(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+    }
+
+    let body: Bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024).await {
+        Ok(b) => b,
+        Err(_) => return err(StatusCode::BAD_REQUEST, "bad body"),
+    };
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_else(|_| json!({}));
+    let book_id = v.get("book_id").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    if book_id.is_empty() || book_id.len() > 40 {
+        return err(StatusCode::BAD_REQUEST, "book_id required");
+    }
+    let g = |k: &str, max: usize| -> String {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .chars()
+            .take(max)
+            .collect()
+    };
+    state
+        .web
+        .history_put(
+            &acc,
+            &book_id,
+            &g("book_name", 120),
+            &g("item_id", 40),
+            &g("chapter_title", 120),
+            &g("source", 20),
+        )
+        .await;
+    Json(json!({ "code": 200 })).into_response()
+}
