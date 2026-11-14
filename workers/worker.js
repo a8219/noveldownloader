@@ -5693,21 +5693,29 @@ async function hHistory(request, env){
 function clientIp(request) {
   return request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip") || "unknown";
 }
+// 内存计数器（isolate 内强一致，可挡突发；KV 最终一致不适合精确计数）
+const __RL = new Map();
+function rateLimitMem(ip, bucket, limit, windowSec) {
+  const now = Date.now();
+  const key = bucket + "|" + ip;
+  let rec = __RL.get(key);
+  if (!rec || now - rec.start >= windowSec * 1000) {
+    rec = { start: now, n: 0 };
+    __RL.set(key, rec);
+  }
+  rec.n++;
+  // 清理过期条目，防内存泄漏
+  if (__RL.size > 5000) {
+    for (const [k, v] of __RL) { if (now - v.start >= windowSec * 1000) __RL.delete(k); }
+  }
+  if (rec.n > limit) {
+    return { ok: false, retry: Math.ceil((rec.start + windowSec * 1000 - now) / 1000) };
+  }
+  return { ok: true, used: rec.n, limit };
+}
 async function rateLimit(env, request, bucket, limit, windowSec) {
-  if (!env?.FANQIE_KV) return { ok: true };
   const ip = clientIp(request);
-  const now = Math.floor(Date.now() / 1000);
-  const slot = Math.floor(now / windowSec);
-  const key = KV_RATE + ":" + bucket + ":" + ip + ":" + slot;
-  try {
-    const cur = parseInt((await env.FANQIE_KV.get(key)) || "0", 10) || 0;
-    if (cur >= limit) {
-      const reset = (slot + 1) * windowSec - now;
-      return { ok: false, retry: reset };
-    }
-    await env.FANQIE_KV.put(key, String(cur + 1), { expirationTtl: Math.max(60, windowSec * 2) });
-    return { ok: true, used: cur + 1, limit };
-  } catch (e) { return { ok: true }; }
+  return rateLimitMem(ip, bucket, limit, windowSec);
 }
 function tooMany(retry) {
   return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
