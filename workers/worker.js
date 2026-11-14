@@ -5689,6 +5689,29 @@ async function hHistory(request, env){
   }
   return json({code:405},405);
 }
+// ---------- 速率限制 ----------
+function clientIp(request) {
+  return request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip") || "unknown";
+}
+async function rateLimit(env, request, bucket, limit, windowSec) {
+  if (!env?.FANQIE_KV) return { ok: true };
+  const ip = clientIp(request);
+  const now = Math.floor(Date.now() / 1000);
+  const slot = Math.floor(now / windowSec);
+  const key = KV_RATE + ":" + bucket + ":" + ip + ":" + slot;
+  try {
+    const cur = parseInt((await env.FANQIE_KV.get(key)) || "0", 10) || 0;
+    if (cur >= limit) {
+      const reset = (slot + 1) * windowSec - now;
+      return { ok: false, retry: reset };
+    }
+    await env.FANQIE_KV.put(key, String(cur + 1), { expirationTtl: Math.max(60, windowSec * 2) });
+    return { ok: true, used: cur + 1, limit };
+  } catch (e) { return { ok: true }; }
+}
+function tooMany(retry) {
+  return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
+}
 async function hConfig(req, env) {
   if (req.method === "GET") {
     let v = env?.FANQIE_PROXY_API || "";
@@ -6047,6 +6070,7 @@ const KV_ADMIN_SESSIONS = "admin_sessions";
 const KV_LOGIN_SESSIONS = "login_sessions";
 const KV_WEB_SESSIONS = "web_sessions";
 const KV_AUTH_FAILS = "auth_fails";
+const KV_RATE = "rate_" + new Date().toISOString().slice(0, 10);
 const DEFAULT_DAILY_LIMIT = 5;
 const DEFAULT_WELCOME = "📖 番茄小说下载器\n\n发送小说链接即可下载完整 TXT。";
 
@@ -7103,7 +7127,11 @@ export default {
       if (p === "/api/detail") return hDetail(env, u.searchParams.get("book_id") || "");
       if (p === "/api/directory") return hDirectory(env, u.searchParams.get("book_id") || "");
       if (p === "/api/content") return hContent(env, u.searchParams.get("item_id") || "");
-      if (p === "/api/download") return hDownload(env, u.searchParams.get("book_id") || "", u.searchParams.get("start"), u.searchParams.get("count"));
+      if (p === "/api/download" || p === "/api/export" || p === "/api/export/zip") {
+        const rl = await rateLimit(env, request, "heavy", 6, 60);
+        if (!rl.ok) return tooMany(rl.retry);
+      }
+            if (p === "/api/download") return hDownload(env, u.searchParams.get("book_id") || "", u.searchParams.get("start"), u.searchParams.get("count"));
       if (p === "/api/export") return hExport(env, u.searchParams.get("book_id") || "", u.searchParams.get("format"), u.searchParams.get("start"), u.searchParams.get("count"));
       if (p === "/api/update") return hUpdateCheck(env, u.searchParams.get("book_id") || "");
       if (p === "/api/export/zip") return hExportZip(env, u.searchParams.get("book_id") || "", u.searchParams.get("format"), u.searchParams.get("start"), u.searchParams.get("count"));
