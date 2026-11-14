@@ -252,15 +252,16 @@ function histOpen(){if(!acctToken){var b0=document.getElementById('histList');do
   }).catch(function(e){ box.textContent='加载失败: '+e; });
 }
 function histNormId(x){
-  var m = String(x||'').match(/(\d{10,})/);
+  var m = String(x||'').match(/(\d{6,})/);
   return m ? m[1] : "";
 }
 function histSave(bookId, bookName, itemId, chTitle){
   var nid = histNormId(bookId); if(nid) bookId = nid;
   if(!bookId) return;
-  // 分享文案里没有数字 ID：用章节 ID 反查真实 book_id
-  if(!/^\d{10,}$/.test(bookId) && itemId){
-    fetch('/api/content?item_id=' + encodeURIComponent(itemId), { headers: { accept: 'application/json' } })
+  // 仅「非纯数字」的分享文案才反查；按书源选对应接口
+  if(!/^\d+$/.test(bookId) && itemId){
+    var cu = src === 'ciweimao' ? ('/api/ciweimao/content?item_id=' + encodeURIComponent(itemId) + '&book_id=' + encodeURIComponent(bookId)) : (src === 'qimao' ? ('/api/qimao/content?item_id=' + encodeURIComponent(itemId) + '&book_id=' + encodeURIComponent(bookId)) : ('/api/content?item_id=' + encodeURIComponent(itemId)));
+    fetch(cu, { headers: { accept: 'application/json' } })
       .then(function(r){ return r.json(); })
       .then(function(d){
         var real = (d && d.data && d.data.book_id) || "";
