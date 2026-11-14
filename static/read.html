@@ -105,7 +105,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
 <header class="mdc-top-app-bar">
   <button class="mdc-icon-button" id="back">&#8592;</button>
   <div class="title" id="title">在线阅读</div>
-  <button class="mdc-icon-button" id="theme">&#9681;</button>
+  <button class="mdc-icon-button" id="theme">&#9681;</button><button class="mdc-icon-button" id="tts" title="TTS">&#128266;</button><button class="mdc-icon-button" id="ttsCfgBtn" title="朗读设置">&#9881;</button><button class="mdc-icon-button" id="acctBtn" title="账号">&#128100;</button>
 </header>
 <main id="app"><div class="tip">加载中…</div></main>
 <div class="loading" id="loading">加载中…</div>
@@ -113,24 +113,81 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   <div class="mdc-navigation-item active" data-view="home"><span class="nav-icon">&#8962;</span><span>首页</span></div>
   <div class="mdc-navigation-item" data-view="search"><span class="nav-icon">&#128269;</span><span>搜索</span></div>
 </nav>
+<div id='ttsCfgPanel' style='display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;padding:32px 16px'>
+  <div style='background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);max-width:420px;margin:0 auto;border-radius:16px;padding:20px;box-sizing:border-box'>
+    <h3 style='margin:0 0 4px;font-size:17px'>朗读设置</h3>
+    <div style='font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-bottom:12px'>配置你自己的 TTS 服务；不配置则使用系统默认语音。</div>
+    <label style='display:block;font-size:13px;margin:8px 0 2px'>引擎</label>
+    <select id='ttsEngine' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit'>
+      <option value='system'>系统语音（默认）</option>
+      <option value='custom'>自定义 TTS API</option>
+    </select>
+    <label style='display:block;font-size:13px;margin:8px 0 2px'>服务地址（OpenAI 兼容，如 https://api.openai.com/v1）</label>
+    <input id='ttsBase' placeholder='https://.../v1' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box'>
+    <label style='display:block;font-size:13px;margin:8px 0 2px'>API Key</label>
+    <input id='ttsKey' type='password' placeholder='sk-...' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box'>
+    <label style='display:block;font-size:13px;margin:8px 0 2px'>模型（可选）</label>
+    <input id='ttsModel' placeholder='tts-1' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box'>
+    <label style='display:block;font-size:13px;margin:8px 0 2px'>音色（可选）</label>
+    <input id='ttsVoice' placeholder='alloy' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box'>
+    <div style='margin-top:16px;display:flex;gap:8px'>
+      <button class='mdc-button' id='ttsSave'>保存</button>
+      <button class='mdc-button text' id='ttsClose'>取消</button>
+    </div>
+    <div style='font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:8px'>自定义 TTS API 需服务商允许跨域；配置保存在本浏览器。</div>
+  </div>
+</div>
+<div id='acctPanel' style='display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;padding:32px 16px'>
+  <div style='background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);max-width:380px;margin:0 auto;border-radius:16px;padding:20px;box-sizing:border-box'>
+    <h3 style='margin:0 0 4px;font-size:17px'>账号</h3>
+    <div id='acctStatus' style='font-size:13px;color:var(--md-sys-color-on-surface-variant);margin-bottom:10px'>未登录（TG 同一账号可直接登录）</div>
+    <div id='acctLogin' style='display:block'>
+      <label style='display:block;font-size:13px;margin:6px 0 2px'>账号（TG 注册的用户名）</label>
+      <input id='acctName' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box' placeholder='用户名'>
+      <label style='display:block;font-size:13px;margin:6px 0 2px'>密码</label>
+      <input id='acctPass' type='password' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;background:var(--md-sys-color-surface-variant);color:inherit;box-sizing:border-box' placeholder='密码'>
+      <div style='margin-top:12px;display:flex;gap:8px'>
+        <button class='mdc-button' id='acctLoginBtn'>登录</button>
+        <button class='mdc-button text' id='acctClose'>关闭</button>
+      </div>
+      <div style='font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:8px'>没有账号？在 Telegram 给机器人发送 /signup 注册（用户名+密码），这里即可登录。</div>
+    </div>
+    <div id='acctLogged' style='display:none'>
+      <div style='font-size:14px;margin:4px 0'>已登录：<b id='acctNameShown'></b></div>
+      <div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap'>
+        <button class='mdc-button tonal' id='histBtn'>阅读历史</button>
+        <button class='mdc-button text' id='logoutBtn'>退出登录</button>
+        <button class='mdc-button text' id='acctClose2'>关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id='histPanel' style='display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;padding:32px 16px'>
+  <div style='background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);max-width:420px;margin:0 auto;border-radius:16px;padding:20px;box-sizing:border-box'>
+    <h3 style='margin:0 0 10px;font-size:17px'>阅读历史</h3>
+    <div id='histList' style='max-height:50vh;overflow:auto;font-size:14px'>加载中…</div>
+    <div style='margin-top:12px'><button class='mdc-button text' id='histClose'>关闭</button></div>
+  </div>
+</div>
 <script>
 (function(){
   var q = new URLSearchParams(location.search);
   var bookId = q.get('book_id') || '';
   var itemId = q.get('item_id') || '';
-  var src = q.get('source') || 'fanqie';  // fanqie | qimao
+  var src = q.get('source') || 'fanqie';  // fanqie | qimao | ciweimao
   var app = document.getElementById('app');
   var titleEl = document.getElementById('title');
   var loading = document.getElementById('loading');
   var dirCache = [], dirMap = {}, detailCache = null, searchCache = null;
   var SOURCES = {
     fanqie: { name: '番茄小说', search: '/api/search?key=', directory: '/api/directory?book_id=', content: '/api/content?item_id=' },
-    qimao:  { name: '七猫中文网', search: '/api/qimao/search?key=', directory: '/api/qimao/directory?book_id=', content: '/api/qimao/content?item_id=' }
+    qimao:  { name: '七猫中文网', search: '/api/qimao/search?key=', directory: '/api/qimao/directory?book_id=', content: '/api/qimao/content?item_id=' },
+    ciweimao: { name: '刺猬猫', search: '/api/ciweimao/search?key=', directory: '/api/ciweimao/directory?book_id=', content: '/api/ciweimao/content?item_id=' }
   };
   function ep(kind, id){
     var s = SOURCES[src] || SOURCES.fanqie;
-    if (src === 'qimao' && kind === 'detail') return s.directory + encodeURIComponent(id || '');
-    if (src === 'qimao' && kind === 'content') return s.content + encodeURIComponent(id || '') + '&book_id=' + encodeURIComponent(bookId || '');
+    if ((src === 'qimao' || src === 'ciweimao') && kind === 'detail') return s.directory + encodeURIComponent(id || '');
+    if ((src === 'qimao' || src === 'ciweimao') && kind === 'content') return s.content + encodeURIComponent(id || '') + '&book_id=' + encodeURIComponent(bookId || '');
     return s[kind] + encodeURIComponent(id || '');
   }
 
@@ -139,6 +196,162 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   var fs = parseInt(localStorage.getItem('md3_fs') || '17', 10);
   document.documentElement.style.setProperty('--fs', fs + 'px');
 
+  var ttsOn = false, ttsPaused = false, ttsBtn = document.getElementById('tts');
+function ttsText(){ var el = document.getElementById('content'); if (!el) return ''; return (el.textContent || '').replace(/\s+/g, ' ').trim(); }
+var acctToken = localStorage.getItem('acctToken') || '';
+var acctName = localStorage.getItem('acctName') || '';
+function acctHdr(){ return acctToken ? {'x-auth-token': acctToken} : {}; }
+function acctRender(){
+  var loginBox=document.getElementById('acctLogin');
+  var loggedBox=document.getElementById('acctLogged');
+  var st=document.getElementById('acctStatus');
+  if(!loginBox||!loggedBox) return;
+  if(acctToken){ loginBox.style.display='none'; loggedBox.style.display='block';
+    if(st) st.textContent='已登录'; var n=document.getElementById('acctNameShown'); if(n) n.textContent=acctName; }
+  else { loginBox.style.display='block'; loggedBox.style.display='none';
+    if(st) st.textContent='未登录（TG 同一账号可直接登录）'; }
+}
+function acctOpen(){ acctRender(); document.getElementById('acctPanel').style.display='block'; }
+function acctClose(){ document.getElementById('acctPanel').style.display='none'; }
+function acctLogin(){
+  var a=(document.getElementById('acctName').value||'').trim();
+  var p=document.getElementById('acctPass').value||'';
+  if(!a||!p){ alert('请输入账号和密码'); return; }
+  fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account:a,password:p})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.code!==200){ alert(d.message||'登录失败'); return; }
+      acctToken=d.token; acctName=d.account;
+      localStorage.setItem('acctToken',acctToken); localStorage.setItem('acctName',acctName);
+      acctRender();
+    }).catch(function(e){ alert('登录失败: '+e); });
+}
+function acctLogout(){
+  acctToken=''; acctName='';
+  localStorage.removeItem('acctToken'); localStorage.removeItem('acctName');
+  acctRender();
+}
+function histOpen(){
+  document.getElementById('histPanel').style.display='block';
+  var box=document.getElementById('histList'); box.textContent='加载中…';
+  fetch('/api/history',{headers:acctHdr()}).then(function(r){return r.json();}).then(function(d){
+    if(d.code!==200){ box.textContent=d.message||'加载失败'; return; }
+    var arr=d.data||[];
+    if(!arr.length){ box.textContent='暂无阅读记录'; return; }
+    box.innerHTML='';
+    for(var i=0;i<arr.length;i++){
+      var it=arr[i]; var row=document.createElement('div');
+      row.style.cssText='padding:10px 0;border-bottom:1px solid var(--md-sys-color-outline-variant);cursor:pointer';
+      var nm=document.createElement('div'); nm.style.fontWeight='600'; nm.textContent=it.book_name||it.book_id;
+      var meta=document.createElement('div'); meta.style.cssText='font-size:12px;color:var(--md-sys-color-on-surface-variant)';
+      meta.textContent=(it.chapter_title||'') + (it.ts? ' · '+new Date(it.ts).toLocaleString():'');
+      row.appendChild(nm); row.appendChild(meta);
+      (function(rec){ row.onclick=function(){ document.getElementById('histPanel').style.display='none'; src=rec.source||src; go(rec.book_id, rec.item_id||''); }; })(it);
+      box.appendChild(row);
+    }
+  }).catch(function(e){ box.textContent='加载失败: '+e; });
+}
+function histSave(bookId, bookName, itemId, chTitle){
+  if(!acctToken || !bookId) return;
+  fetch('/api/history',{method:'POST',headers:Object.assign({'content-type':'application/json'},acctHdr()),body:JSON.stringify({book_id:bookId,book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',source:src})}).catch(function(){});
+}
+var acctBtnEl=document.getElementById('acctBtn');
+if(acctBtnEl) acctBtnEl.onclick=function(){ acctOpen(); };
+var _al=document.getElementById('acctLoginBtn'); if(_al) _al.onclick=acctLogin;
+var _ac1=document.getElementById('acctClose'); if(_ac1) _ac1.onclick=acctClose;
+var _ac2=document.getElementById('acctClose2'); if(_ac2) _ac2.onclick=acctClose;
+var _lo=document.getElementById('logoutBtn'); if(_lo) _lo.onclick=acctLogout;
+var _hb=document.getElementById('histBtn'); if(_hb) _hb.onclick=histOpen;
+var _hc=document.getElementById('histClose'); if(_hc) _hc.onclick=function(){ document.getElementById('histPanel').style.display='none'; };
+acctRender();
+function ttsCfgLoad(){
+  try { return JSON.parse(localStorage.getItem('ttsCfg') || 'null'); } catch (e) { return null; }
+}
+function ttsCfgOpen(){
+  var c = ttsCfgLoad() || {};
+  document.getElementById('ttsEngine').value = (c.engine === 'custom') ? 'custom' : 'system';
+  document.getElementById('ttsBase').value = c.base || '';
+  document.getElementById('ttsKey').value = c.key || '';
+  document.getElementById('ttsModel').value = c.model || '';
+  document.getElementById('ttsVoice').value = c.voice || '';
+  document.getElementById('ttsCfgPanel').style.display = 'block';
+}
+function ttsCfgSave(){
+  var c = { engine: document.getElementById('ttsEngine').value,
+    base: document.getElementById('ttsBase').value.trim(),
+    key: document.getElementById('ttsKey').value.trim(),
+    model: document.getElementById('ttsModel').value.trim(),
+    voice: document.getElementById('ttsVoice').value.trim() };
+  localStorage.setItem('ttsCfg', JSON.stringify(c));
+  document.getElementById('ttsCfgPanel').style.display = 'none';
+  if (ttsBtn) ttsBtn.textContent = '🔊';
+}
+function ttsCfgClose(){
+  document.getElementById('ttsCfgPanel').style.display = 'none';
+}
+
+function ttsStop(){ if ('speechSynthesis' in window) if (window.__ttsAudio){ try { window.__ttsAudio.pause(); } catch (e) {} window.__ttsAudio = null; }
+window.speechSynthesis.cancel(); if (ttsAudio){ ttsAudio.pause(); ttsAudio.src = ''; ttsAudio = null; } ttsOn = false; ttsPaused = false; if (ttsBtn) ttsBtn.textContent = '🔊'; }
+function ttsSpeak(){
+  var txt = ttsText(); if (!txt) return;
+  var cfg = ttsCfgLoad();
+  if (cfg && cfg.engine === 'custom' && cfg.base && cfg.key) { ttsCustom(cfg, txt); }
+  else { ttsFallback(txt); }
+}
+function ttsCustom(cfg, txt){
+  fetch((cfg.base.endsWith('/') ? cfg.base : cfg.base + '/') + 'audio/speech', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + cfg.key },
+    body: JSON.stringify({ model: cfg.model || 'tts-1', voice: cfg.voice || 'alloy', input: txt.slice(0, 1500), response_format: 'mp3' })
+  })
+    .then(function(r){ if (!r.ok) throw new Error('status ' + r.status); return r.blob(); })
+    .then(function(blob){
+      var url = URL.createObjectURL(blob);
+      var au = new Audio(url);
+      au.onended = function(){ ttsStop(); URL.revokeObjectURL(url); };
+      au.onerror = function(){ URL.revokeObjectURL(url); ttsFallback(txt); };
+      au.play().catch(function(){ URL.revokeObjectURL(url); ttsFallback(txt); });
+      ttsOn = true; ttsPaused = false; if (ttsBtn) ttsBtn.textContent = '⏸';
+      window.__ttsAudio = au;
+    })
+    .catch(function(){ ttsFallback(txt); });
+}
+function ttsFallback(txt){
+  if (!('speechSynthesis' in window)){ alert('TTS 未配置且浏览器不支持系统朗读'); return; }
+  window.speechSynthesis.cancel();
+  var chunks = txt.match(/[^。！？!?]+[。！？!?]?/g) || [txt];
+  var list = [];
+  for (var i = 0; i < chunks.length; i++){ var u = new SpeechSynthesisUtterance(chunks[i]); u.lang = 'zh-CN'; u.rate = 1; u.pitch = 1; list.push(u); }
+  for (var j = 0; j < list.length; j++){
+    (function(u, idx){ u.onend = function(){ if (idx < list.length - 1){ speechSynthesis.speak(list[idx + 1]); } else { ttsStop(); } }; })(list[j], j);
+  }
+  speechSynthesis.speak(list[0]);
+  ttsOn = true; ttsPaused = false; if (ttsBtn) ttsBtn.textContent = '⏸';
+}
+var ttsAudio = null;
+function ttsSystemSpeak(txt){
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  var chunks = txt.match(/[^。！？!?]+[。！？!?]?/g) || [txt];
+  var list = [];
+  for (var i = 0; i < chunks.length; i++){ var u = new SpeechSynthesisUtterance(chunks[i]); u.lang = 'zh-CN'; u.rate = 1; u.pitch = 1; list.push(u); }
+  for (var j = 0; j < list.length; j++){
+    (function(u, idx){ u.onend = function(){ if (idx < list.length - 1){ speechSynthesis.speak(list[idx + 1]); } else { ttsStop(); } }; })(list[j], j);
+  }
+  speechSynthesis.speak(list[0]);
+}
+var ttsCfgBtn = document.getElementById('ttsCfgBtn');
+if (ttsCfgBtn) ttsCfgBtn.onclick = function(){ ttsCfgOpen(); };
+var ttsSave = document.getElementById('ttsSave');
+if (ttsSave) ttsSave.onclick = function(){ ttsCfgSave(); };
+var ttsClose = document.getElementById('ttsClose');
+if (ttsClose) ttsClose.onclick = function(){ ttsCfgClose(); };
+if (ttsBtn) ttsBtn.onclick = function(){
+  if (!('speechSynthesis' in window)) return;
+  if (ttsOn && ttsPaused){ speechSynthesis.resume(); ttsPaused = false; ttsBtn.textContent = '⏸'; }
+  else if (ttsOn){ speechSynthesis.pause(); ttsPaused = true; ttsBtn.textContent = '▶'; }
+  else ttsSpeak();
+};
   document.getElementById('theme').onclick = function(){
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
     if (dark) document.documentElement.removeAttribute('data-theme');
@@ -181,7 +394,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
       '<div style="font-size:14px;color:var(--md-sys-color-on-surface-variant)">快速在线阅读，支持书名搜索</div>' +
       '<div class="mdc-search-bar"><span class="search-icon">&#128269;</span><input id="bid" placeholder="输入书名、链接或书籍 ID" autocomplete="off"></div>' +
       '<button class="mdc-button" id="go" style="width:100%;height:48px;border-radius:24px">打开书籍</button>' +
-      '<div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:16px;line-height:1.8">提示：' + (src==='qimao' ? '可直接输入七猫书籍 ID（如 1655407）或书名搜索。' : '搜索需配置 FANQIE_PROXY_API 代理；也可以直接粘贴番茄小说链接或书籍 ID。') + '</div>' +
+      '<div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:16px;line-height:1.8">提示：' + (src==='qimao' ? '可直接输入七猫书籍 ID（如 1655407）或书名搜索。' : (src==='ciweimao' ? '刺猬猫暂不支持站内搜索，请直接粘贴书籍链接（如 https://www.ciweimao.com/book/100119445）或书籍 ID。' : '搜索需配置 FANQIE_PROXY_API 代理；也可以直接粘贴番茄小说链接或书籍 ID。')) + '</div>' +
       '</div>';
     var open = function(){
       var v = (document.getElementById('bid').value || '').trim();
@@ -193,10 +406,23 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
     document.getElementById('bid').addEventListener('keydown', function(e){ if (e.key === 'Enter') open(); });
     var f = document.getElementById('srcFanqie');
     var qm = document.getElementById('srcQimao');
+    var cw = document.getElementById('srcCiweimao');
     if (f) f.onclick = function(){ src='fanqie'; renderHome(); };
     if (qm) qm.onclick = function(){ src='qimao'; renderHome(); };
+    if (cw) cw.onclick = function(){ src='ciweimao'; renderHome(); };
   }
 
+  function fanqieClientSearch(k){
+    var url = 'https://fanqienovel.com/api/author/search/search_book/v1?query_word=' + encodeURIComponent(k) + '&query_type=1&page_count=10&page_index=0';
+    return fetch(url, { credentials: 'include', headers: { 'accept': 'application/json' } })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var list = (d && d.data && d.data.search_book_data_list) || [];
+        if (!list.length) throw new Error('empty');
+        return { code: 200, from: 'fanqie-web', data: { search_book_data_list: list } };
+      })
+      .catch(function(){ return api(ep('search', k)); });
+  }
   function renderSearch(){
     setTitle('搜索' + (SOURCES[src]||SOURCES.fanqie).name); setNav('search');
     app.innerHTML = '<div style="padding:12px 16px 4px;font-size:13px;color:var(--md-sys-color-on-surface-variant)">当前书源：' + (SOURCES[src]||SOURCES.fanqie).name + '</div>' +
@@ -207,7 +433,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
       var k = (input.value || '').trim();
       if (!k) return;
       show(true);
-      api(ep('search', k)).then(function(r){
+      (src === 'fanqie' ? fanqieClientSearch(k) : api(ep('search', k))).then(function(r){
         show(false);
         renderResults(r);
       }).catch(function(e){ show(false); document.getElementById('results').innerHTML = '<div class="tip">搜索失败：' + esc(e && e.message ? e.message : e) + '</div>'; });
@@ -306,6 +532,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
       if (!text) { app.innerHTML = '<div class="tip">本章获取失败或需登录，请稍后重试。</div>'; return; }
       if (d.paid) { app.innerHTML = '<div class="tip">' + esc(d.notice || '本章为付费章节，本项目仅支持免费内容。') + '</div>'; return; }
       setTitle(title + (d.book_name ? ' - ' + d.book_name : ''));
+      try { histSave(bookId, d.book_name || '', itemId, title); } catch (e) {}
       var idx = -1;
       for (var i = 0; i < dirCache.length; i++) if (String(dirCache[i].item_id) === String(itemId)) { idx = i; break; }
       var html = '<div style="padding:14px 18px 0"><div style="font-size:18px;font-weight:600">' + esc(title) + '</div>';
@@ -325,6 +552,7 @@ main{max-width:720px;margin:0 auto;padding:12px 0 88px}
   }
 
   function render(){
+    try { ttsStop(); } catch (e) {}
     detailCache = null;
     if (itemId && bookId) renderChapter();
     else if (bookId) renderBook();
