@@ -113,6 +113,8 @@ impl WebAccountStore {
         }
     }
 
+    /// Persist users to disk. Kept for future write paths (e.g. web-side signup).
+    #[allow(dead_code)]
     fn save_users(&self, users: &Users) {
         if let Ok(s) = serde_json::to_string_pretty(users) {
             let _ = std::fs::write(self.root.join(USERS_FILE), s);
