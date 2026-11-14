@@ -231,7 +231,7 @@ function acctLogout(){
   localStorage.removeItem('acctToken'); localStorage.removeItem('acctName');
   acctRender();
 }
-function histOpen(){
+function histOpen(){if(!acctToken){var b0=document.getElementById('histList');document.getElementById('histPanel').style.display='block';var ha={};try{ha=JSON.parse(localStorage.getItem('nd_hist_local')||'{}')}catch(e0){ha={}}var a0=Object.keys(ha).map(function(k){var v=ha[k]||{};return{book_id:k,book_name:v.book_name,item_id:v.item_id,chapter_title:v.chapter_title,ts:v.ts,source:v.source}});a0.sort(function(x,y){return(y.ts||0)-(x.ts||0)});if(!a0.length){b0.textContent='暂无阅读记录';return;}b0.innerHTML='';for(var i0=0;i0<a0.length;i0++){(function(t0){var r0=document.createElement('div');r0.style.cssText='padding:10px 0;border-bottom:1px solid var(--md-sys-color-outline-variant);cursor:pointer';var n0=document.createElement('div');n0.style.fontWeight='600';n0.textContent=t0.book_name||t0.book_id;var m0=document.createElement('div');m0.style.cssText='font-size:12px;color:var(--md-sys-color-on-surface-variant)';m0.textContent=(t0.chapter_title||'')+(t0.ts?' · '+new Date(t0.ts).toLocaleString():'');r0.appendChild(n0);r0.appendChild(m0);r0.onclick=function(){document.getElementById('histPanel').style.display='none';src=t0.source||src;go(t0.book_id,t0.item_id||'')};b0.appendChild(r0)})(a0[i0]);}return;}
   document.getElementById('histPanel').style.display='block';
   var box=document.getElementById('histList'); box.textContent='加载中…';
   fetch('/api/history',{headers:acctHdr()}).then(function(r){return r.json();}).then(function(d){
@@ -252,7 +252,7 @@ function histOpen(){
   }).catch(function(e){ box.textContent='加载失败: '+e; });
 }
 function histSave(bookId, bookName, itemId, chTitle){
-  if(!acctToken || !bookId) return;
+  if(!bookId) return;try{var hk='nd_hist_'+(acctName||'local');var ha=JSON.parse(localStorage.getItem(hk)||'{}');ha[bookId]={book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',ts:Date.now(),source:src};var hks=Object.keys(ha);if(hks.length>200){hks.sort(function(a,b){return(ha[a].ts||0)-(ha[b].ts||0)});for(var hi=0;hi<hks.length-200;hi++)delete ha[hks[hi]];}localStorage.setItem(hk,JSON.stringify(ha))}catch(eH){}if(!acctToken) return;
   fetch('/api/history',{method:'POST',headers:Object.assign({'content-type':'application/json'},acctHdr()),body:JSON.stringify({book_id:bookId,book_name:bookName||'',item_id:itemId||'',chapter_title:chTitle||'',source:src})}).catch(function(){});
 }
 var acctBtnEl=document.getElementById('acctBtn');
