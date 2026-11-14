@@ -4948,7 +4948,7 @@ const UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Geck
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, x-auth-token, x-admin-token",
 };
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json; charset=utf-8", ...CORS } });
@@ -5009,6 +5009,23 @@ async function parseBookId(v) {
   }
 
   // changdunovel.com/t/xxx/ 短链接：读 302 Location 里的 book_id
+  // 安全门禁：必须是绝对 http(s):// URL 且 host 在白名单，防 http:/127.0.0.1 / //127 / javascript: 等绕过
+  if (/changdunovel\.com\/t\//.test(s)) {
+    let shortUrl;
+    try {
+      shortUrl = new URL(s);
+      if (!/^https?:$/.test(shortUrl.protocol) || !isAllowedBookHost(shortUrl.hostname)) return "";
+    } catch (e) { return ""; }
+    s = shortUrl.href;
+  } else {
+    // 非短链但含 scheme 形态：统一校验，杜绝单斜杠/相对 URL 进入 fetch
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s)) {
+      try {
+        const u3 = new URL(s);
+        if (!/^https?:$/.test(u3.protocol) || !isAllowedBookHost(u3.hostname)) return "";
+      } catch (e3) { return ""; }
+    }
+  }
   if (/changdunovel\.com\/t\//.test(s)) {
     try {
       const r = await fetch(s, { redirect: "manual", headers: { "user-agent": UA } });
@@ -5222,7 +5239,11 @@ async function proxyList(env) {
   const out = [];
   // 1) 用户单一代理（不受开关控制，始终优先）
   let user = env?.FANQIE_PROXY_API || null;
-  if (!user && env?.FANQIE_KV) user = await env.FANQIE_KV.get("proxy_api");
+  if (user) { try { const bu = new URL(user); if (!/^https:$/.test(bu.protocol) || !isAllowedProxyHost(bu.hostname)) user = null; } catch(e) { user = null; } }
+  if (!user && env?.FANQIE_KV) {
+    const kvBase = await env.FANQIE_KV.get("proxy_api");
+    if (kvBase) { try { const bu2 = new URL(kvBase); if (/^https:$/.test(bu2.protocol) && isAllowedProxyHost(bu2.hostname)) user = kvBase; } catch(e) {} }
+  }
   if (user) out.push({ name: "user", base: String(user).replace(/\/$/, "") });
 
   // 2) KV 代理池（需 FANQIE_USE_PROXY=1）
@@ -5243,6 +5264,14 @@ async function proxyList(env) {
   // 3) 硬编码兜底
   for (const p of HARDCODED_PROXIES) out.push(p);
   return out;
+}
+
+function isAllowedProxyHost(h) {
+  const hh = String(h || "").toLowerCase();
+  if (!hh) return false;
+  if (/^(localhost|127\.|10\.|169\.254\.|192\.168\.|0\.0\.0\.0|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|198\.(1[89])\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hh)) return false;
+  if (hh.indexOf(":") >= 0 || hh === "metadata.google.internal" || hh.endsWith(".internal")) return false;
+  return true;
 }
 
 async function proxyGet(env, path, params) {
@@ -5607,10 +5636,21 @@ function adminOk(req, env) {
 // ---------- 网页账号互通 + 阅读历史 ----------
 async function loadWebSessions(env){ return await kvGet(env, KV_WEB_SESSIONS, {}); }
 async function saveWebSessions(env, v){ return await kvSet(env, KV_WEB_SESSIONS, v); }
-async function issueWebToken(env, account){
+async function issueWebToken(env, account, pwdHash){
   const sessions = await loadWebSessions(env);
+  const now = Date.now();
+  // 清理同账号旧会话 + 过期会话 + 全局上限，防 KV 膨胀
+  const keys = Object.keys(sessions);
+  for (const k of keys) {
+    const v = sessions[k];
+    if (!v || now - (v.created_at||0) > 30*24*3600*1000 || String(v.account||"") === String(account)) delete sessions[k];
+  }
+  if (Object.keys(sessions).length >= 1000) {
+    const sorted = Object.keys(sessions).sort((a,b)=>(sessions[a].created_at||0)-(sessions[b].created_at||0));
+    for (let i = 0; i < Object.keys(sessions).length - 999; i++) delete sessions[sorted[i]];
+  }
   const tok = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  sessions[tok] = { account, created_at: Date.now() };
+  sessions[tok] = { account, created_at: now, pwd_hash: String(pwdHash||"") };
   await saveWebSessions(env, sessions);
   return tok;
 }
@@ -5620,7 +5660,17 @@ async function webAccount(env, token){
   const s2 = sessions[token];
   if(!s2) return '';
   if(Date.now() - s2.created_at > 30*24*3600*1000){ delete sessions[token]; await saveWebSessions(env, sessions); return ''; }
-  return s2.account || '';
+  const acc = s2.account || '';
+  // 管理员账号（env 明文）不查 users；普通用户若被删/改密码则 token 失效
+  const admU = env?.FANQIE_ADMIN_USERNAME || '';
+  if (acc && acc !== admU) {
+    const users = await loadUsers(env);
+    const u = Object.values(users).find(x => String(x.account||'') === String(acc));
+    if (!u || u.banned || !u.pwd_hash || u.pwd_hash !== s2.pwd_hash) {
+      delete sessions[token]; await saveWebSessions(env, sessions); return '';
+    }
+  }
+  return acc;
 }
 async function hAuth(request, env){
   if(request.method==='POST'){
@@ -5641,7 +5691,7 @@ async function hAuth(request, env){
     const admP = env?.FANQIE_ADMIN_PASSWORD || '';
     if(admU && admP && account === admU && pass === admP){
       delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
-      const tok = await issueWebToken(env, account);
+      const tok = await issueWebToken(env, account, "admin-env");
       return json({code:200, token: tok, account: account, admin: true});
     }
     // ---- 普通用户：users KV ----
@@ -5649,7 +5699,7 @@ async function hAuth(request, env){
     const u = findUserByAccount(users, account);
     if(u && u.pwd_hash === await hashPw(pass)){
       delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
-      const tok = await issueWebToken(env, u.account);
+      const tok = await issueWebToken(env, u.account, u.pwd_hash);
       return json({code:200, token: tok, account: u.account});
     }
     // ---- 失败计数 ----
@@ -5766,7 +5816,15 @@ async function hConfig(req, env) {
     if (!adminOk(req, env)) return json({ code: 403, message: "admin token required" }, 403);
     if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
     const b = await req.json().catch(() => ({}));
-    await env.FANQIE_KV.put("proxy_api", String(b.proxy_api || "").trim());
+    const pa = String(b.proxy_api || "").trim();
+    if (pa) {
+      try {
+        const pu = new URL(pa);
+        if (!/^https:$/.test(pu.protocol) || !isAllowedProxyHost(pu.hostname))
+          return json({ code: 400, message: "proxy_api must be https and a public host" }, 400);
+      } catch (e) { return json({ code: 400, message: "invalid proxy_api URL" }, 400); }
+    }
+    await env.FANQIE_KV.put("proxy_api", pa);
     return json({ code: 200 });
   }
   return json({ code: 405 }, 405);
@@ -6829,7 +6887,11 @@ async function hTelegramWebhook(request, env, ctx) {
 async function hTelegramSetup(request, env) {
   const token = env?.TG_BOT_TOKEN;
   if (!token) return json({ ok: false, error: "TG_BOT_TOKEN not set" }, 500);
-  const origin = new URL(request.url).origin;
+  const configured = String(env?.PUBLIC_HOST || "").trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const reqUrl = new URL(request.url);
+  const hostOk = configured ? (reqUrl.hostname === configured) : /\.workers\.dev$/.test(reqUrl.hostname);
+  if (!hostOk) return json({ ok: false, error: "host not allowed" }, 400);
+  const origin = configured ? ("https://" + configured) : reqUrl.origin;
   const body = { url: `${origin}/tg/webhook` };
   if (env?.TG_WEBHOOK_SECRET) body.secret_token = env.TG_WEBHOOK_SECRET;
   const r = await fetch(`${TG_API}${token}/setWebhook`, {

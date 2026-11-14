@@ -564,6 +564,8 @@ pub async fn add_library(State(state): State<AppState>, Json(body): Json<Value>)
     {
         let mut lib = state.library.write().await;
         // cap: bound library size so anonymous writes cannot exhaust memory
+        const MAX: usize = 10000;
+        if lib.len() >= MAX && !lib.contains_key(id) {
             return err(StatusCode::TOO_MANY_REQUESTS, "library is full");
         }
         lib.insert(id.to_string(), body.clone());
