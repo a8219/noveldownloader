@@ -4,6 +4,5 @@
 .DS_Store
 .idea/
 .vscode/
-Cargo.lock
 deploy_worker.py
 workers/.wrangler/
