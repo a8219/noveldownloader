@@ -5882,30 +5882,6 @@ async function rateLimit(env, request, bucket, limit, windowSec) {
 function tooMany(retry) {
   return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
 }
-async function hConfig(req, env) {
-  // 管理配置接口：GET/POST 都需要 admin token
-  if (!adminOk(req, env)) return json({ code: 403, message: "admin token required" }, 403);
-  if (req.method === "GET") {
-    let v = env?.FANQIE_PROXY_API || "";
-    if (env?.FANQIE_KV) v = (await env.FANQIE_KV.get("proxy_api")) || v;
-    return json({ code: 200, proxy_configured: v.length>0, hardcoded: HARDCODED_PROXIES.length });
-  }
-  if (req.method === "POST") {
-    if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
-    const b = await req.json().catch(() => ({}));
-    const pa = String(b.proxy_api || "").trim();
-    if (pa) {
-      try {
-        const pu = new URL(pa);
-        if (!/^https:$/.test(pu.protocol) || !isAllowedProxyHost(pu.hostname))
-          return json({ code: 400, message: "proxy_api must be https and a public host" }, 400);
-      } catch (e) { return json({ code: 400, message: "invalid proxy_api URL" }, 400); }
-    }
-    await env.FANQIE_KV.put("proxy_api", pa);
-    return json({ code: 200 });
-  }
-  return json({ code: 405 }, 405);
-}
 
 
 // ========== 刺猬猫（www.ciweimao.com，欢乐书客系） ==========
@@ -7313,25 +7289,7 @@ export default {
     }
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
     try {
-      if (p === "/") return json({
-        code: 200,
-        endpoints: [
-          "/api/search?key=",
-          "/api/detail?book_id=",
-          "/api/directory?book_id=",
-          "/api/content?item_id=",
-          "/api/download?book_id=&start=0&count=20",
-          "/api/export?book_id=&format=txt|html|epub&start=0&count=20",
-          "/api/export/zip?book_id=&format=txt|html&start=0&count=20",
-          "/api/update?book_id=",
-          "/api/config",
-          "POST /tg/webhook",
-          "GET /tg/setup",
-          "/read (FANQIE_ONLINE_READ=1 时启用的在线阅读页)",
-          "CRON * * * * * (全自动队列)",
-        ],
-        font_map_entries: Object.keys(FONT_MAP).length,
-      });
+      if (p === "/") return json({ code: 200, ok: true });
       // 读接口统一限流（每 IP 每分钟 60 次），防匿名批量抓取耗尽额度
       if (p === "/api/search" || p === "/api/detail" || p === "/api/directory" || p === "/api/content" || p === "/api/update" || p === "/api/qimao/search" || p === "/api/qimao/directory" || p === "/api/qimao/content" || p === "/api/ciweimao/search" || p === "/api/ciweimao/directory" || p === "/api/ciweimao/content") {
         const rlRead = await rateLimit(env, request, "read", 60, 60);
@@ -7352,7 +7310,6 @@ export default {
       if (p === "/api/auth") return hAuth(request, env);
       if (p === "/api/history") return hHistory(request, env);
       if (p === "/api/shelf") return hShelf(request, env);
-      if (p === "/api/config") return hConfig(request, env);
       // 七猫免费书源
       if (p === "/api/caps") return hCaps(env);
       // 刺猬猫书源
@@ -7363,28 +7320,6 @@ export default {
       if (p === "/api/qimao/directory") return hQimaoDirectory(env, u.searchParams.get("book_id") || "");
       if (p === "/api/qimao/content") return hQimaoContent(env, u.searchParams.get("item_id") || "", u.searchParams.get("book_id") || "");
       if (p === "/read" || p === "/read/" || p === "/read/index.html") return hRead(request, env);
-      if (p === "/api/proxy/pool") {
-        if (!adminOk(request, env)) return json({ code: 403, message: "admin token required" }, 403);
-        if (request.method === "GET") {
-          if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
-          const pool = JSON.parse((await env.FANQIE_KV.get(PROXY_KV_KEY)) || "[]");
-          const meta = JSON.parse((await env.FANQIE_KV.get(PROXY_META_KEY)) || "{}");
-          return json({ code: 200, use_proxy: env?.FANQIE_USE_PROXY === "1", alive: pool.length, pool, last_probe: meta });
-        }
-        if (request.method === "POST") {
-          if (!adminOk(request, env)) return json({ code: 403, message: "admin token required" }, 403);
-          const b = await request.json().catch(() => ({}));
-          if (Array.isArray(b.candidates)) {
-            await env.FANQIE_KV.put("proxy:candidates", JSON.stringify(b.candidates));
-          }
-          if (b.probe) {
-            const r = await probePool(env, b.test_id);
-            return json({ code: 200, ...r });
-          }
-          return json({ code: 200, ok: true, message: "candidates saved; add \"probe\":true to run" });
-        }
-        return json({ code: 405 }, 405);
-      }
       if (p === "/tg/webhook" && request.method === "POST") return hTelegramWebhook(request, env, ctx);
 
       if (p === "/tg/setup") {
