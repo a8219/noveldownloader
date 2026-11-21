@@ -5672,9 +5672,23 @@ async function webAccount(env, token){
   }
   return acc;
 }
+// 读取 JSON body，超过 maxBytes 直接 413（防大 body DoS）
+async function readJsonBody(request, maxBytes) {
+  const limit = maxBytes || 8192;
+  const cl = parseInt(request.headers.get('content-length') || '0', 10);
+  if (cl && cl > limit) return { err: 413, body: null };
+  try {
+    const text = await request.text();
+    if (text.length > limit) return { err: 413, body: null };
+    return { err: 0, body: text ? JSON.parse(text) : {} };
+  } catch (e) { return { err: 400, body: null }; }
+}
 async function hAuth(request, env){
   if(request.method==='POST'){
-    const b = await request.json().catch(()=>({}));
+    const rb = await readJsonBody(request, 8192);
+    if (rb.err === 413) return json({code:413,message:"request body too large"},413);
+    if (rb.err) return json({code:400,message:"bad json"},400);
+    const b = rb.body || {};
     const account = String(b.account||'').trim();
     const pass = String(b.password||'');
     if(!account || !pass) return json({code:400,message:'请输入账号和密码'},400);
@@ -5728,7 +5742,10 @@ async function hShelf(request, env){
     return json({code:200,data:arr});
   }
   if(request.method==='POST'){
-    const b = await request.json().catch(()=>({}));
+    const rb = await readJsonBody(request, 8192);
+    if (rb.err === 413) return json({code:413,message:"request body too large"},413);
+    if (rb.err) return json({code:400,message:"bad json"},400);
+    const b = rb.body || {};
     const rawId = String(b.book_id||'').trim().slice(0,200);
     const mId = rawId.match(/(\d{6,})/);
     const book_id = mId ? mId[1] : '';
@@ -5745,8 +5762,8 @@ async function hShelf(request, env){
     const u2 = new URL(request.url);
     const delId = String(u2.searchParams.get('book_id')||'').trim();
     const mD = delId.match(/(\d{6,})/);
-    const key_ = mD ? mD[1] : delId;
-    if(!key_) return json({code:400,message:'book_id required'},400);
+    const key_ = mD ? mD[1] : "";
+    if(!key_) return json({code:400,message:'invalid book_id'},400);
     const v = await kvGet(env, key, []);
     const arr = (Array.isArray(v)?v:[]).filter(x=>String(x.book_id||'')!==key_);
     await kvSet(env, key, arr);
@@ -5777,8 +5794,8 @@ async function hHistory(request, env){
     const u2 = new URL(request.url);
     const delId = String(u2.searchParams.get('book_id')||'').trim();
     const mD = delId.match(/(\d{6,})/);
-    const key_ = mD ? mD[1] : delId;
-    if(!key_) return json({code:400,message:'book_id required'},400);
+    const key_ = mD ? mD[1] : "";
+    if(!key_) return json({code:400,message:'invalid book_id'},400);
     const vd = await kvGet(env, key, {});
     let removed = false;
     for (const k of Object.keys(vd)) {
@@ -5790,7 +5807,10 @@ async function hHistory(request, env){
     return json({code:200, removed});
   }
   if(request.method==='POST'){
-    const b = await request.json().catch(()=>({}));
+    const rb = await readJsonBody(request, 8192);
+    if (rb.err === 413) return json({code:413,message:"request body too large"},413);
+    if (rb.err) return json({code:400,message:"bad json"},400);
+    const b = rb.body || {};
     const rawId = String(b.book_id||'').trim().slice(0, 200);
     const mId = rawId.match(/(\d{6,})/);
     let book_id = mId ? mId[1] : "";
