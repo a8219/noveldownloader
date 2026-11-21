@@ -290,11 +290,50 @@ function shelfOpen(){
         var delBtn=document.createElement('button'); delBtn.textContent='移除'; delBtn.className='mdc-button text'; delBtn.style.cssText='height:32px;padding:0 10px;font-size:12px;color:var(--md-sys-color-error)';
         delBtn.onclick=function(e){ e.stopPropagation(); shelfDel(it.book_id); };
         row.appendChild(nm); row.appendChild(delBtn);
-        row.onclick=function(){ document.getElementById('shelfPanel').style.display='none'; src=it.source||src; go(it.book_id,''); };
+        row.onclick=function(){ document.getElementById('shelfPanel').style.display='none'; src=it.source||src; shelfGoBook(it); };
         box.appendChild(row);
       })(arr[i]);
     }
   }).catch(function(e){ box.textContent='加载失败: '+e; });
+}
+function shelfGoBook(it){
+  if(!it || !it.book_id){ return; }
+  // 1) 已登录：查云端历史，找该书最后读的章节
+  if(acctToken){
+    fetch('/api/history',{headers:acctHdr()}).then(function(r){return r.json();}).then(function(d){
+      var arr = (d && d.code===200 && d.data) || [];
+      var hit = null;
+      for(var i=0;i<arr.length;i++){ if(String(arr[i].book_id)===String(it.book_id)){ hit = arr[i]; break; } }
+      if(hit && hit.item_id) gotoChapter(it.book_id, hit.item_id);
+      else go(it.book_id, '');
+    }).catch(function(){
+      // 云端失败 → 尝试本地历史
+      var local = shelfLocalHit(it.book_id);
+      if(local && local.item_id) gotoChapter(it.book_id, local.item_id);
+      else go(it.book_id, '');
+    });
+  } else {
+    var local2 = shelfLocalHit(it.book_id);
+    if(local2 && local2.item_id) gotoChapter(it.book_id, local2.item_id);
+    else go(it.book_id, '');
+  }
+}
+function shelfLocalHit(bookId){
+  try{
+    var ha=JSON.parse(localStorage.getItem('nd_hist_'+(acctName||'local'))||'{}');
+    var v = ha[String(bookId)];
+    if(v && v.item_id) return v;
+  }catch(e){}
+  return null;
+}
+function gotoChapter(bookId, itemId){
+  // 先拉目录，保证上一章/下一章可用
+  api(ep('directory', bookId)).then(function(dd){
+    var lists = (dd && dd.data && dd.data.lists) || [];
+    dirCache = lists; dirMap = {};
+    for (var i2=0;i2<lists.length;i2++) dirMap[String(lists[i2].item_id)] = lists[i2];
+    go(bookId, itemId);
+  }).catch(function(){ go(bookId, itemId); });
 }
 function shelfDel(bookId){
   if(!bookId) return;
