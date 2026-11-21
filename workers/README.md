@@ -34,8 +34,11 @@
 | `GET /api/export?book_id=&format=&start=&count=` | 导出 txt / html / epub |
 | `GET /api/export/zip?book_id=&format=&start=&count=` | 分批打包 zip |
 | `GET /api/update?book_id=` | 更新检查（对比 KV 记录） |
-| `GET/POST /api/config` | 查看/设置代理 API |
-| `POST /api/proxy/pool` | 代理池管理 |
+| `POST /api/auth` | 网页登录（账号+密码，返回 token） |
+| `GET/POST/DELETE /api/history` | 阅读历史（需 `x-auth-token`） |
+| `GET/POST/DELETE /api/shelf` | 我的书架（需 `x-auth-token`） |
+| `GET /api/qimao/search\|directory\|content` | 七猫搜索 / 目录 / 正文 |
+| `GET /api/ciweimao/search\|directory\|content` | 刺猬猫搜索 / 目录 / 正文 |
 
 ### 🤖 Telegram Bot
 - 账号注册/登录（SHA-256 密码哈希）
@@ -64,8 +67,8 @@
 
 ### 2. 克隆项目
 ```bash
-git clone https://github.com/a8219/fanqiedownloader.git
-cd fanqiedownloader/workers
+git clone https://github.com/a8219/noveldownloader.git
+cd noveldownloader/workers
 ```
 
 ### 3. 登录 Cloudflare
@@ -79,7 +82,7 @@ wrangler kv namespace create FANQIE_KV
 ```
 复制输出的 `id`，填入 `wrangler.toml` 的 `[[kv_namespaces]]` 中 `id = "<your-kv-id>"`。
 
-> **注意**：`wrangler.toml` 中的 `FANQIE_DO`（Durable Object）由 `[[migrations]]` 自动创建，无需手动配置。
+> **注意**：`wrangler.toml` 中的 `FANQIE_DO`（Durable Object）通过 `[exports.FanqieJob]` 声明式绑定，首次部署自动创建，无需手动迁移。
 
 ### 5. 设置环境变量（Secrets）
 ```bash

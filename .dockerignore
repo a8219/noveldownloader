@@ -1,9 +1,0 @@
-.git
-.gitignore
-.env
-.env.*
-target
-.backup
-*.md
-Dockerfile
-docker-compose.yml

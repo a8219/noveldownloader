@@ -23,8 +23,6 @@
 
 由于 GPL-3.0 的传染性条款，`workers/worker.js` 因包含此代码而整体以 AGPL-3.0 分发（AGPL-3.0 与 GPL-3.0 兼容）。
 
-**Rust 版本**: `src/crypto/` 目录下的 `sign.rs`、`device.rs`、`ttencrypt.rs`、`chapter.rs` 是从上述 Worker 内联代码移植的 Rust 实现，同样继承 GPL-3.0 的版权来源。
-
 ---
 
 ### 2. Vue.js Runtime
@@ -50,7 +48,7 @@
 | 来源 | 自行逆向工程 |
 | 方法 | 将番茄小说自绘字体（子集 woff2 `dc027189e0ba4cd`）的每个字形轮廓 MD5 与思源黑体 SourceHanSansCN-Normal v2.002 比对 |
 | 结果 | 362 个 PUA（Private Use Area）码点 → 实际汉字映射，三本不同书籍验证全覆盖 |
-| 位置 | `workers/worker.js` 中的 `FONT_MAP` 常量、Rust `src/font_map.rs`、`static/font_map.json` |
+| 位置 | `workers/worker.js` 中的 `FONT_MAP` 常量 |
 | 许可 | 本项目原创，适用 AGPL-3.0 |
 
 ---
@@ -71,8 +69,6 @@
 fanqie-assistant (GPL-3.0)
     ↓ 内联到 workers/worker.js
 workers/worker.js → 整体 AGPL-3.0（AGPL-3.0 兼容 GPL-3.0）
-    ↓ 移植到 Rust
-src/crypto/ → 继承 GPL-3.0 来源声明
 
 Vue.js (MIT) → 保留原始版权声明即可
 原创部分 → AGPL-3.0
