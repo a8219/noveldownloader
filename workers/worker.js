@@ -5284,7 +5284,7 @@ async function proxyGet(env, path, params) {
       } else {
         url = `${p.base}${path}?${qs}`;
       }
-      const r = await fetchT(url, { headers: { "user-agent": UA } }, 10000);
+      const r = await fetchT(url, { headers: { "user-agent": UA }, redirect: "manual" }, 10000);
       if (!r.ok) continue;
       const d = await r.json();
       if (d && (d.code === 200 || d.code === 0 || d.success === true)) {
@@ -5636,7 +5636,7 @@ function adminOk(req, env) {
 // ---------- 网页账号互通 + 阅读历史 ----------
 async function loadWebSessions(env){ return await kvGet(env, KV_WEB_SESSIONS, {}); }
 async function saveWebSessions(env, v){ return await kvSet(env, KV_WEB_SESSIONS, v); }
-async function issueWebToken(env, account, pwdHash){
+async function issueWebToken(env, account, pwdHash, kind = "user"){
   const sessions = await loadWebSessions(env);
   const now = Date.now();
   // 清理同账号旧会话 + 过期会话 + 全局上限，防 KV 膨胀
@@ -5650,7 +5650,7 @@ async function issueWebToken(env, account, pwdHash){
     for (let i = 0; i < Object.keys(sessions).length - 999; i++) delete sessions[sorted[i]];
   }
   const tok = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  sessions[tok] = { account, created_at: now, pwd_hash: String(pwdHash||"") };
+  sessions[tok] = { account, created_at: now, pwd_hash: String(pwdHash||""), kind };
   await saveWebSessions(env, sessions);
   return tok;
 }
@@ -5661,78 +5661,105 @@ async function webAccount(env, token){
   if(!s2) return '';
   if(Date.now() - s2.created_at > 30*24*3600*1000){ delete sessions[token]; await saveWebSessions(env, sessions); return ''; }
   const acc = s2.account || '';
-  // 管理员账号（env 明文）不查 users；普通用户若被删/改密码则 token 失效
+  // Reserved admin namespace must be backed by an explicit current admin credential.
+  let valid = false;
   const admU = env?.FANQIE_ADMIN_USERNAME || '';
-  if (acc && acc !== admU) {
+  if (reservedAdmin(env, acc)) {
+    valid = acc === admU && s2.kind === 'admin' && Boolean(env?.FANQIE_ADMIN_PASSWORD)
+      && s2.pwd_hash === await adminCredentialHash(env);
+  } else if (s2.kind !== 'admin') {
     const users = await loadUsers(env);
-    const u = Object.values(users).find(x => String(x.account||'') === String(acc));
-    if (!u || u.banned || !u.pwd_hash || u.pwd_hash !== s2.pwd_hash) {
-      delete sessions[token]; await saveWebSessions(env, sessions); return '';
-    }
+    const user = Object.values(users).find(x => String(x.account || '') === String(acc));
+    valid = Boolean(user && !user.banned && user.pwd_hash && user.pwd_hash === s2.pwd_hash);
   }
+  if (!valid) { delete sessions[token]; await saveWebSessions(env, sessions); return ''; }
   return acc;
 }
-// 读取 JSON body，超过 maxBytes 直接 413（防大 body DoS）
+function canonicalAccount(value) { return String(value || '').trim().toLowerCase(); }
+function reservedAdmin(env, account) {
+  return Boolean(env?.FANQIE_ADMIN_USERNAME) && canonicalAccount(account) === canonicalAccount(env.FANQIE_ADMIN_USERNAME);
+}
+async function adminCredentialHash(env) {
+  return hashPw('admin\0' + String(env?.FANQIE_ADMIN_USERNAME || '') + '\0' + String(env?.FANQIE_ADMIN_PASSWORD || ''));
+}
+async function authAttempt(env, account, action = 'reserve') {
+  if (!env?.FANQIE_DO) return { ok: false, unavailable: true };
+  try {
+    const id = env.FANQIE_DO.idFromName('web-auth:' + await hashPw(canonicalAccount(account)));
+    const response = await env.FANQIE_DO.get(id).fetch('https://do/auth-rate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }),
+    });
+    if (!response.ok) return { ok: false, unavailable: true };
+    return await response.json();
+  } catch { return { ok: false, unavailable: true }; }
+}
 async function readJsonBody(request, maxBytes) {
   const limit = maxBytes || 8192;
-  const cl = parseInt(request.headers.get('content-length') || '0', 10);
-  if (cl && cl > limit) return { err: 413, body: null };
+  const rawLength = request.headers.get('content-length');
+  if (rawLength && (!/^\d+$/.test(rawLength) || Number(rawLength) > limit)) return { err: 413, body: null };
+  const reader = request.body?.getReader();
+  if (!reader) return { err: 0, body: {} };
+  let size = 0;
+  const chunks = [];
   try {
-    const text = await request.text();
-    if (text.length > limit) return { err: 413, body: null };
-    return { err: 0, body: text ? JSON.parse(text) : {} };
-  } catch (e) { return { err: 400, body: null }; }
-}
-async function hAuth(request, env){
-  if(request.method==='POST'){
-    const rb = await readJsonBody(request, 8192);
-    if (rb.err === 413) return json({code:413,message:"request body too large"},413);
-    if (rb.err) return json({code:400,message:"bad json"},400);
-    const b = rb.body || {};
-    const rawAccount = String(b.account||'');
-    const account = rawAccount.trim();
-    const accountExact = rawAccount;
-    const pass = String(b.password||'');
-    if(!account || !pass) return json({code:400,message:'请输入账号和密码'},400);
-    // ---- 失败限流（按账号，10 分钟内 5 次失败则锁 15 分钟）----
-    const fails = await kvGet(env, KV_AUTH_FAILS, {});
-    const rec = fails[account] || { n: 0, first: 0, locked_until: 0 };
-    const now = Date.now();
-    if(rec.locked_until && now < rec.locked_until){
-      const mins = Math.ceil((rec.locked_until - now) / 60000);
-      return json({code:429,message:'尝试次数过多，请 '+mins+' 分钟后再试'},429);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) { await reader.cancel().catch(() => {}); return { err: 413, body: null }; }
+      chunks.push(value);
     }
-    // ---- 管理员：走环境变量明文比对（与 TG 一致）----
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const body = text ? JSON.parse(text) : {};
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return { err: 400, body: null };
+    return { err: 0, body };
+  } catch { return { err: 400, body: null }; }
+  finally { reader.releaseLock(); }
+}
+async function hAuth(request, env) {
+  if (request.method === 'POST') {
+    if (!env?.FANQIE_DO) return json({ code: 503, message: 'authentication temporarily unavailable' }, 503);
+    const ipLimit = await rateLimit(env, request, 'web-auth-ip', 30, 60);
+    if (!ipLimit.ok) return tooMany(ipLimit.retry);
+    const rb = await readJsonBody(request, 8192);
+    if (rb.err) return json({ code: rb.err, message: rb.err === 413 ? 'request body too large' : 'bad json' }, rb.err);
+    const b = rb.body;
+    if (typeof b.account !== 'string' || typeof b.password !== 'string') return json({ code: 400, message: '请输入账号和密码' }, 400);
+    const rawAccount = b.account;
+    const account = rawAccount.trim();
+    const pass = b.password;
+    if (!account || !pass || account.length > 64 || pass.length > 1024) return json({ code: 400, message: 'invalid account or password length' }, 400);
+    const attempt = await authAttempt(env, account);
+    if (attempt.unavailable) return json({ code: 503, message: 'authentication temporarily unavailable' }, 503);
+    if (!attempt.ok) return tooMany(attempt.retry || 900);
     const admU = env?.FANQIE_ADMIN_USERNAME || '';
     const admP = env?.FANQIE_ADMIN_PASSWORD || '';
-    // 管理员账号精确匹配（API 层不接受前后空格，恒定时间比较密码）
-    if(admU && admP && String(b.account||"") === admU && timingEqual(pass, admP)){
-      delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
-      const tok = await issueWebToken(env, account, "admin-env");
-      return json({code:200, token: tok, account: account, admin: true});
+    if (reservedAdmin(env, account)) {
+      if (admP && rawAccount === admU && timingEqual(pass, admP)) {
+        const cleared = await authAttempt(env, account, 'clear');
+        if (cleared.unavailable) return json({ code: 503, message: 'authentication temporarily unavailable' }, 503);
+        const token = await issueWebToken(env, admU, await adminCredentialHash(env), 'admin');
+        return json({ code: 200, token, account: admU, admin: true });
+      }
+      return json({ code: 401, message: '账号或密码错误' }, 401);
     }
-    // ---- 普通用户：users KV ----
     const users = await loadUsers(env);
-    const u = findUserByAccount(users, account);
-    if(u && u.pwd_hash === await hashPw(pass)){
-      delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
-      const tok = await issueWebToken(env, u.account, u.pwd_hash);
-      return json({code:200, token: tok, account: u.account});
+    const user = findUserByAccount(users, account);
+    if (user && !user.banned && user.pwd_hash === await hashPw(pass)) {
+      const cleared = await authAttempt(env, account, 'clear');
+      if (cleared.unavailable) return json({ code: 503, message: 'authentication temporarily unavailable' }, 503);
+      const token = await issueWebToken(env, user.account, user.pwd_hash, 'user');
+      return json({ code: 200, token, account: user.account });
     }
-    // ---- 失败计数 ----
-    if(!rec.first || now - rec.first > 10*60*1000){ rec.n = 1; rec.first = now; }
-    else rec.n++;
-    if(rec.n >= 5){ rec.locked_until = now + 15*60*1000; rec.n = 0; rec.first = 0; }
-    fails[account] = rec; await kvSet(env, KV_AUTH_FAILS, fails);
-    return json({code:401,message:'账号或密码错误'},401);
+    return json({ code: 401, message: '账号或密码错误' }, 401);
   }
-  if(request.method==='GET'){
-    const h2 = request.headers.get('x-auth-token')||'';
-    const acc = await webAccount(env, h2);
-    return json({code:200, account: acc});
-  }
-  return json({code:405},405);
+  if (request.method === 'GET') return json({ code: 200, account: await webAccount(env, request.headers.get('x-auth-token') || '') });
+  return json({ code: 405 }, 405);
 }
+
 
 async function hShelf(request, env){
   const h2 = request.headers.get('x-auth-token')||'';
@@ -5859,6 +5886,7 @@ function rateLimitMem(ip, bucket, limit, windowSec) {
   // 清理过期条目，防内存泄漏
   if (__RL.size > 5000) {
     for (const [k, v] of __RL) { if (now - v.start >= windowSec * 1000) __RL.delete(k); }
+    while (__RL.size > 5000) __RL.delete(__RL.keys().next().value);
   }
   if (rec.n > limit) {
     return { ok: false, retry: Math.ceil((rec.start + windowSec * 1000 - now) / 1000) };
@@ -5867,7 +5895,7 @@ function rateLimitMem(ip, bucket, limit, windowSec) {
 }
 async function rateLimit(env, request, bucket, limit, windowSec) {
   const ip = clientIp(request);
-  if (!env?.FANQIE_DO) return { ok: true };
+  if (!env?.FANQIE_DO) return rateLimitMem(ip, bucket, limit, windowSec);
   try {
     const id = env.FANQIE_DO.idFromName("ratelimit");
     const stub = env.FANQIE_DO.get(id);
@@ -5877,7 +5905,7 @@ async function rateLimit(env, request, bucket, limit, windowSec) {
       body: JSON.stringify({ key: bucket + "|" + ip, limit, window: windowSec })
     });
     return await r.json();
-  } catch (e) { return { ok: true }; }
+  } catch (e) { return bucket === "web-auth-ip" ? { ok: false, retry: 30 } : rateLimitMem(ip, bucket, limit, windowSec); }
 }
 function tooMany(retry) {
   return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
@@ -6777,7 +6805,7 @@ async function tgHandleUpdate(env, token, update, origin) {
       if (sess.mode === "signup") {
         if (!validUsername(input)) { await tgSend(token, chatId, "⚠️ 用户名格式不正确（3~32 位，字母/数字/下划线/横线，首位为字母或数字）"); return; }
         const users = await loadUsers(env);
-        if (accountExists(users, input)) { await tgSend(token, chatId, "⚠️ 该用户名已被占用，请换一个。"); return; }
+        if (reservedAdmin(env, input) || accountExists(users, input)) { await tgSend(token, chatId, "⚠️ 该用户名已被占用，请换一个。"); return; }
         sess.username = input; sess.step = "reg_password";
         sessions[String(chatId)] = sess; await saveLoginSessions(env, sessions);
         await tgSend(token, chatId, "🔑 请输入密码（至少 8 位，需同时包含字母和数字）");
@@ -6796,7 +6824,7 @@ async function tgHandleUpdate(env, token, update, origin) {
       const issue = passwordIssues(pw);
       if (issue) { await tgSend(token, chatId, `⚠️ ${issue}，请重新 /signup 注册。`); return; }
       const users = await loadUsers(env);
-      if (accountExists(users, newUser)) { await tgSend(token, chatId, "⚠️ 该用户名已被占用，请换一个重新 /signup。"); return; }
+      if (reservedAdmin(env, newUser) || accountExists(users, newUser)) { await tgSend(token, chatId, "⚠️ 该用户名已被占用，请换一个重新 /signup。"); return; }
       let u = users[String(chatId)];
       if (!u) u = { id: chatId, username: from.username || "", first_name: from.first_name || "", today: todayStr(), today_count: 0, total: 0, banned: false, first_seen: todayStr(), last_seen: todayStr() };
       u.account = newUser;
@@ -7051,19 +7079,41 @@ export class FanqieJob {
 
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/ratelimit") {
+    if (url.pathname === '/auth-rate') {
       const body = await request.json().catch(() => ({}));
-      const key = String(body.key || "unknown");
-      const limit = parseInt(body.limit, 10) || 10;
-      const windowSec = parseInt(body.window, 10) || 60;
       const now = Date.now();
-      const rec = (await this.state.storage.get("rl:" + key)) || { start: now, n: 0 };
-      if (now - rec.start >= windowSec * 1000) { rec.start = now; rec.n = 0; }
-      rec.n++;
-      await this.state.storage.put("rl:" + key, rec);
-      const ok = rec.n <= limit;
-      const retry = ok ? 0 : Math.ceil((rec.start + windowSec * 1000 - now) / 1000);
-      return new Response(JSON.stringify({ ok, used: rec.n, limit, retry }), { headers: { "content-type": "application/json" } });
+      const result = await this.state.storage.transaction(async tx => {
+        if (body.action === 'clear') { await tx.delete('auth-attempts'); return { ok: true }; }
+        const rec = await tx.get('auth-attempts') || { first: now, n: 0, locked_until: 0 };
+        if (rec.locked_until > now) return { ok: false, retry: Math.ceil((rec.locked_until - now) / 1000) };
+        if (now - rec.first >= 600000 || rec.locked_until) { rec.first = now; rec.n = 0; rec.locked_until = 0; }
+        rec.n++;
+        if (rec.n > 5) return { ok: false, retry: 900 };
+        if (rec.n === 5) rec.locked_until = now + 900000;
+        await tx.put('auth-attempts', rec);
+        return { ok: true };
+      });
+      await this.state.storage.put('security_expiry', now + 1800000);
+      await this.state.storage.setAlarm(now + 1800000);
+      return json(result);
+    }
+    if (url.pathname === '/ratelimit') {
+      const body = await request.json().catch(() => ({}));
+      const key = String(body.key || 'unknown').slice(0, 160);
+      const limit = Math.max(1, Math.min(10000, parseInt(body.limit, 10) || 10));
+      const windowSec = Math.max(1, Math.min(3600, parseInt(body.window, 10) || 60));
+      const now = Date.now();
+      const result = await this.state.storage.transaction(async tx => {
+        const rec = await tx.get('rl:' + key) || { start: now, n: 0 };
+        if (now - rec.start >= windowSec * 1000) { rec.start = now; rec.n = 0; }
+        rec.n++;
+        rec.expires = rec.start + windowSec * 1000;
+        await tx.put('rl:' + key, rec);
+        const ok = rec.n <= limit;
+        return { ok, used: rec.n, limit, retry: ok ? 0 : Math.max(1, Math.ceil((rec.expires - now) / 1000)) };
+      });
+      await this.state.storage.setAlarm(now + windowSec * 1000);
+      return json(result);
     }
 
     if (url.pathname === "/cancel") {
@@ -7112,7 +7162,21 @@ export class FanqieJob {
 
   async alarm() {
     const job = await this.state.storage.get("job");
-    if (!job) return;
+    if (!job) {
+      const securityExpiry = await this.state.storage.get('security_expiry');
+      if (securityExpiry) {
+        if (securityExpiry <= Date.now()) await this.state.storage.deleteAll();
+        else await this.state.storage.setAlarm(securityExpiry);
+        return;
+      }
+      const records = await this.state.storage.list({ prefix: 'rl:', limit: 1000 });
+      const now = Date.now();
+      const expired = [];
+      for (const [key, rec] of records) if ((rec.expires || rec.start + 3600000) <= now) expired.push(key);
+      if (expired.length) await this.state.storage.delete(expired);
+      if (records.size > expired.length || records.size === 1000) await this.state.storage.setAlarm(now + 60000);
+      return;
+    }
     const token = this.env?.TG_BOT_TOKEN;
     const cancelled = await this.state.storage.get("cancelled");
 
