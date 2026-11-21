@@ -5352,7 +5352,7 @@ async function hDetail(env, book_id) {
         cover: ld.cover || "",
       },
     });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 目录 ----------
@@ -5387,7 +5387,7 @@ async function hDirectory(env, book_id) {
         lists,
       },
     });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 正文 ----------
@@ -5449,10 +5449,10 @@ async function hContent(env, item_id) {
         book_name: webData.cd.bookName || "", title: webData.cd.title || "",
         order: webData.cd.order ?? 0, word_count: webData.cd.chapterWordNumber ?? 0,
         content: webData.content, locked: webData.locked, truncated: true,
-        error: String(e),
+        error: "upstream error",
       } });
     }
-    return json({ code: 502, message: String(e) }, 502);
+    return json({ code: 502, message: "upstream error" }, 502);
   }
 
   return json({ code: 404, message: "chapter not found" }, 404);
@@ -5689,7 +5689,9 @@ async function hAuth(request, env){
     if (rb.err === 413) return json({code:413,message:"request body too large"},413);
     if (rb.err) return json({code:400,message:"bad json"},400);
     const b = rb.body || {};
-    const account = String(b.account||'').trim();
+    const rawAccount = String(b.account||'');
+    const account = rawAccount.trim();
+    const accountExact = rawAccount;
     const pass = String(b.password||'');
     if(!account || !pass) return json({code:400,message:'请输入账号和密码'},400);
     // ---- 失败限流（按账号，10 分钟内 5 次失败则锁 15 分钟）----
@@ -5703,7 +5705,8 @@ async function hAuth(request, env){
     // ---- 管理员：走环境变量明文比对（与 TG 一致）----
     const admU = env?.FANQIE_ADMIN_USERNAME || '';
     const admP = env?.FANQIE_ADMIN_PASSWORD || '';
-    if(admU && admP && account === admU && pass === admP){
+    // 管理员账号精确匹配（API 层不接受前后空格，恒定时间比较密码）
+    if(admU && admP && String(b.account||"") === admU && timingEqual(pass, admP)){
       delete fails[account]; await kvSet(env, KV_AUTH_FAILS, fails);
       const tok = await issueWebToken(env, account, "admin-env");
       return json({code:200, token: tok, account: account, admin: true});
@@ -5880,13 +5883,14 @@ function tooMany(retry) {
   return json({ code: 429, message: "请求过于频繁，请 " + retry + " 秒后再试", retry }, 429);
 }
 async function hConfig(req, env) {
+  // 管理配置接口：GET/POST 都需要 admin token
+  if (!adminOk(req, env)) return json({ code: 403, message: "admin token required" }, 403);
   if (req.method === "GET") {
     let v = env?.FANQIE_PROXY_API || "";
     if (env?.FANQIE_KV) v = (await env.FANQIE_KV.get("proxy_api")) || v;
     return json({ code: 200, proxy_configured: v.length>0, hardcoded: HARDCODED_PROXIES.length });
   }
   if (req.method === "POST") {
-    if (!adminOk(req, env)) return json({ code: 403, message: "admin token required" }, 403);
     if (!env?.FANQIE_KV) return json({ code: 500, message: "FANQIE_KV not bound" }, 500);
     const b = await req.json().catch(() => ({}));
     const pa = String(b.proxy_api || "").trim();
@@ -6024,7 +6028,7 @@ async function hCiweimaoDirectory(env, book_id) {
     }
     if (!lists.length) return json({ code: 404, message: "ciweimao directory: no chapters" }, 404);
     return json({ code: 200, from: "ciweimao", data: { book_id, book_name: bookName || ("书籍 " + book_id), author, abstract, cover, chapter_total: lists.length, lists } });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 刺猬猫：正文 ----------
@@ -6069,7 +6073,7 @@ async function hCiweimaoContent(env, item_id, book_id) {
       }
     } catch (e) {}
     return json({ code: 200, from: "ciweimao", data: { item_id, title, book_name: bookName, author, content, paid: !content, notice: content ? "" : "（本章解密失败或为空 — 可能需要登录）" } });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ========== 七猫中文网（免费书源） ==========
@@ -6149,7 +6153,7 @@ async function hQimaoSearch(env, key) {
       source: "qimao",
     })).filter((b) => b.book_id);
     return json({ code: 200, from: "qimao", data: { search_book_data_list: items, total_count: items.length } });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 七猫：目录 ----------
@@ -6179,7 +6183,7 @@ async function hQimaoDirectory(env, book_id) {
       code: 200, from: "qimao",
       data: { book_id, book_name, author, chapter_total: lists.length, lists },
     });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 七猫：正文 ----------
@@ -6207,7 +6211,7 @@ async function hQimaoContent(env, item_id, book_id) {
         notice: isVip ? "（付费章节 — 本项目仅支持免费内容，不提供付费章节下载）" : "",
       },
     });
-  } catch (e) { return json({ code: 502, message: String(e) }, 502); }
+  } catch (e) { return json({ code: 502, message: "upstream error" }, 502); }
 }
 
 // ---------- 按书源分发目录/正文（供 TG 下载用） ----------
@@ -7303,6 +7307,10 @@ function hRead(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const u = new URL(request.url), p = u.pathname;
+    // 单个查询参数长度上限 200，防超长 URL 处理开销
+    for (const [k, v] of u.searchParams) {
+      if (v && v.length > 200) return json({ code: 400, message: "query parameter too long" }, 400);
+    }
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
     try {
       if (p === "/") return json({
@@ -7324,7 +7332,12 @@ export default {
         ],
         font_map_entries: Object.keys(FONT_MAP).length,
       });
-      if (p === "/api/search") return hSearch(env, u.searchParams.get("key") || "");
+      // 读接口统一限流（每 IP 每分钟 60 次），防匿名批量抓取耗尽额度
+      if (p === "/api/search" || p === "/api/detail" || p === "/api/directory" || p === "/api/content" || p === "/api/update" || p === "/api/qimao/search" || p === "/api/qimao/directory" || p === "/api/qimao/content" || p === "/api/ciweimao/search" || p === "/api/ciweimao/directory" || p === "/api/ciweimao/content") {
+        const rlRead = await rateLimit(env, request, "read", 60, 60);
+        if (!rlRead.ok) return tooMany(rlRead.retry);
+      }
+            if (p === "/api/search") return hSearch(env, u.searchParams.get("key") || "");
       if (p === "/api/detail") return hDetail(env, u.searchParams.get("book_id") || "");
       if (p === "/api/directory") return hDirectory(env, u.searchParams.get("book_id") || "");
       if (p === "/api/content") return hContent(env, u.searchParams.get("item_id") || "");
@@ -7379,7 +7392,7 @@ export default {
         return hTelegramSetup(request, env);
       }
       return json({ code: 404 }, 404);
-    } catch (e) { return json({ code: 500, message: String(e) }, 500); }
+    } catch (e) { return json({ code: 500, message: "internal error" }, 500); }
   },
   async scheduled(event, env, ctx) {
     const cron = event && event.cron;
