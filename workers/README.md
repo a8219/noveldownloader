@@ -51,9 +51,10 @@
 ### 🛡️ 安全机制
 - 管理员账号密码仅从环境变量读取，无硬编码
 - 密码 SHA-256 哈希存储；会话 token 为服务端随机 24 字节，存于 KV 并带 30 天有效期
-- 登录失败限流 + 管理员告警；网页登录另有按 IP 的尝试次数限制
+- 网页登录按 IP 的尝试次数限制；失败计数只在口令错误后累加，正确口令不会被锁定（防止定向锁死账号）
+- Telegram `/login` 连续失败 5 次锁定 15 分钟；退出登录会吊销服务端会话 token
 - 网页登录使用请求头 `x-auth-token` 传递 token，不依赖 Cookie
-- 阅读页返回 CSP（`script-src 'self'` + 内联脚本 SHA-256 白名单）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex`
+- 阅读页返回 CSP（`script-src 'self'` + 内联脚本 SHA-256 白名单，并用 `default-src`/`style-src`/`img-src`/`connect-src`/`media-src` 收紧其余来源）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex`
 - 阅读页所有外部数据（书名、章节标题、正文、搜索词）均经转义后渲染，不使用 `eval` / `innerHTML` 拼接未转义内容
 - Telegram Webhook 未配置 `TG_WEBHOOK_SECRET` 时默认拒绝，校验使用恒定时间比较
 - 导出文件名过滤控制字符与路径保留字符，zip 内章节目录名只保留字母数字下划线，避免解压路径穿越

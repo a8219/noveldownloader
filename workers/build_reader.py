@@ -15,7 +15,12 @@ def build(source):
     scripts = re.findall(r'<script\b[^>]*>([\s\S]*?)</script>', html, re.I)
     hashes = ["'sha256-" + base64.b64encode(hashlib.sha256(script.encode()).digest()).decode() + "'"
               for script in scripts if script.strip()]
-    policy = "script-src 'self' " + ' '.join(hashes) + "; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    policy = ("script-src 'self' " + ' '.join(hashes)
+              + "; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+              + "; default-src 'self'; style-src 'self' 'unsafe-inline'"
+              + "; img-src 'self' https: data:; connect-src https:"
+              + "; media-src 'self' https: data: blob:; font-src 'self' data:"
+              + "; frame-src 'none'; form-action 'none'")
     replacement = ('const READ_PAGE_HTML = ' + json.dumps(html, ensure_ascii=False) + ';\n'
                    'const MATERIAL_THEME_JS = ' + json.dumps(theme, ensure_ascii=False) + ';\n'
                    'const READ_PAGE_CSP = ' + json.dumps(policy) + ';\n')

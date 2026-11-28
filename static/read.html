@@ -356,6 +356,7 @@ html.reader-paged .read-nav{flex:none;margin:6px 0 10px}
   var bookId = q.get('book_id') || '';
   var itemId = q.get('item_id') || '';
   var src = q.get('source') || 'fanqie';  // fanqie | qimao | ciweimao
+  if (src !== 'qimao' && src !== 'ciweimao') src = 'fanqie';
   var app = document.getElementById('app');
   var titleEl = document.getElementById('title');
   var loading = document.getElementById('loading');
@@ -487,9 +488,11 @@ function acctLogin(){
     }).catch(function(e){ notify('登录失败: '+e); });
 }
 function acctLogout(){
+  var tok=acctToken;
   acctToken=''; acctName='';
   localStorage.removeItem('acctToken'); localStorage.removeItem('acctName');
   acctRender();
+  if(tok){ fetch('/api/auth',{method:'DELETE',headers:{'x-auth-token':tok}}).catch(function(){}); }
 }
 function histOpen(){if(!acctToken){var b0=document.getElementById('histList');openPanel('histPanel');var ha={};try{ha=JSON.parse(localStorage.getItem('nd_hist_local')||'{}')}catch(e0){ha={}}var a0=Object.keys(ha).map(function(k){var v=ha[k]||{};return{book_id:k,book_name:v.book_name,item_id:v.item_id,chapter_title:v.chapter_title,ts:v.ts,source:v.source}});a0.sort(function(x,y){return(y.ts||0)-(x.ts||0)});if(!a0.length){b0.textContent='暂无阅读记录';return;}b0.innerHTML='';for(var i0=0;i0<a0.length;i0++){(function(t0){var r0=document.createElement('div');r0.style.cssText='padding:10px 0;border-bottom:1px solid var(--md-sys-color-outline-variant);cursor:pointer';var n0=document.createElement('div');n0.style.fontWeight='600';n0.textContent=t0.book_name||t0.book_id;var m0=document.createElement('div');m0.style.cssText='font-size:12px;color:var(--md-sys-color-on-surface-variant)';m0.textContent=(t0.chapter_title||'')+(t0.ts?' · '+new Date(t0.ts).toLocaleString():'');r0.appendChild(n0);r0.appendChild(m0);r0.onclick=function(){closePanel('histPanel');src=t0.source||src;histGoBook(t0)};b0.appendChild(r0)})(a0[i0]);}return;}
   openPanel('histPanel');
@@ -718,8 +721,10 @@ function ttsCfgOpen(){
   openPanel('ttsCfgPanel');
 }
 function ttsCfgSave(){
+  var base = document.getElementById('ttsBase').value.trim();
+  if (base && !/^https:\/\//i.test(base)) { notify('自定义朗读接口必须使用 https:// 地址，凭据不会发往明文连接。'); return; }
   var c = { engine: document.getElementById('ttsEngine').value,
-    base: document.getElementById('ttsBase').value.trim(),
+    base: base,
     key: document.getElementById('ttsKey').value.trim(),
     model: document.getElementById('ttsModel').value.trim(),
     voice: document.getElementById('ttsVoice').value.trim() };
@@ -736,7 +741,7 @@ window.speechSynthesis.cancel(); if (ttsAudio){ ttsAudio.pause(); ttsAudio.src =
 function ttsSpeak(){
   var txt = ttsText(); if (!txt) return;
   var cfg = ttsCfgLoad();
-  if (cfg && cfg.engine === 'custom' && cfg.base && cfg.key) { ttsCustom(cfg, txt); }
+  if (cfg && cfg.engine === 'custom' && cfg.base && cfg.key && /^https:\/\//i.test(cfg.base)) { ttsCustom(cfg, txt); }
   else { ttsFallback(txt); }
 }
 function ttsCustom(cfg, txt){
@@ -1129,6 +1134,7 @@ html += '</div>';
     var p = new URLSearchParams(location.search);
     bookId = p.get('book_id') || ''; itemId = p.get('item_id') || '';
     src = p.get('source') || 'fanqie';
+    if (src !== 'qimao' && src !== 'ciweimao') src = 'fanqie';
     render();
   });
 
