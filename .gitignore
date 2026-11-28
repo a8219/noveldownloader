@@ -8,3 +8,5 @@ deploy_preview.py
 workers/.wrangler/
 workers/__pycache__/
 node_modules/
+android/build/
+*.keystore

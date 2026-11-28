@@ -26,6 +26,11 @@
 - 阅读页源码在 [`static/read.html`](static/read.html)，由 `workers/build_reader.py` 生成内嵌版 `workers/worker.js`
 - 入口：`/read`（需 `FANQIE_ONLINE_READ=1` 启用）
 
+### 📱 Android 离线版（本地一体包）
+- 把阅读页 + Worker 全部逻辑打包进一个 APK：搜索、详情、目录、正文、书架、历史都在手机本地执行
+- **不监听端口、不启动本地服务器**，不经过自建服务器；内置番茄 APP 签名搜索，无需代理
+- 源码与构建脚本见 [`android/`](android/)，安装包见 [Releases](https://github.com/a8219/noveldownloader/releases)
+
 ### 🔍 书源
 | 平台 | 书源 ID | 在线读 | 下载 | 搜索 | 说明 |
 |---|---|---|---|---|---|
