@@ -220,7 +220,7 @@ html.reader-paged .read-nav{flex:none;margin:6px 0 10px}
     <label style='display:block;font-size:13px;margin:8px 0 2px'>服务地址（OpenAI 兼容，如 https://api.openai.com/v1）</label>
     <input id='ttsBase' placeholder='https://.../v1' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;color:inherit;box-sizing:border-box'>
     <label style='display:block;font-size:13px;margin:8px 0 2px'>API Key</label>
-    <input id='ttsKey' type='password' placeholder='sk-...' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;color:inherit;box-sizing:border-box'>
+    <input id='ttsKey' type='password' placeholder='sk-...' autocomplete='off' spellcheck='false' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;color:inherit;box-sizing:border-box'>
     <label style='display:block;font-size:13px;margin:8px 0 2px'>模型（可选）</label>
     <input id='ttsModel' placeholder='tts-1' style='width:100%;padding:8px;border:1px solid var(--md-sys-color-outline);border-radius:8px;color:inherit;box-sizing:border-box'>
     <label style='display:block;font-size:13px;margin:8px 0 2px'>音色（可选）</label>
@@ -715,7 +715,8 @@ function ttsCfgOpen(){
   var c = ttsCfgLoad() || {};
   document.getElementById('ttsEngine').value = (c.engine === 'custom') ? 'custom' : 'system';
   document.getElementById('ttsBase').value = c.base || '';
-  document.getElementById('ttsKey').value = c.key || '';
+  document.getElementById('ttsKey').value = '';
+  document.getElementById('ttsKey').placeholder = c.key ? '已保存，留空沿用' : 'sk-...';
   document.getElementById('ttsModel').value = c.model || '';
   document.getElementById('ttsVoice').value = c.voice || '';
   openPanel('ttsCfgPanel');
@@ -723,9 +724,11 @@ function ttsCfgOpen(){
 function ttsCfgSave(){
   var base = document.getElementById('ttsBase').value.trim();
   if (base && !/^https:\/\//i.test(base)) { notify('自定义朗读接口必须使用 https:// 地址，凭据不会发往明文连接。'); return; }
+  var prevCfg = ttsCfgLoad() || {};
+  var keyInput = document.getElementById('ttsKey').value.trim();
   var c = { engine: document.getElementById('ttsEngine').value,
     base: base,
-    key: document.getElementById('ttsKey').value.trim(),
+    key: keyInput || String(prevCfg.key || ''),
     model: document.getElementById('ttsModel').value.trim(),
     voice: document.getElementById('ttsVoice').value.trim() };
   localStorage.setItem('ttsCfg', JSON.stringify(c));
