@@ -4,4 +4,7 @@
 .idea/
 .vscode/
 deploy_worker.py
+deploy_preview.py
 workers/.wrangler/
+workers/__pycache__/
+node_modules/

@@ -1,0 +1,14 @@
+name = "noveldownloader-ui-preview"
+main = "ui-preview.js"
+compatibility_date = "2026-10-24"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html", "**/material-theme.txt"]
+fallthrough = true
+
+[[services]]
+binding = "READER_API"
+service = "fanqie-downloader"

@@ -34,11 +34,8 @@
 | `GET /api/export?book_id=&format=&start=&count=` | 导出 txt / html / epub |
 | `GET /api/export/zip?book_id=&format=&start=&count=` | 分批打包 zip |
 | `GET /api/update?book_id=` | 更新检查（对比 KV 记录） |
-| `POST /api/auth` | 网页登录（账号+密码，返回 token） |
-| `GET/POST/DELETE /api/history` | 阅读历史（需 `x-auth-token`） |
-| `GET/POST/DELETE /api/shelf` | 我的书架（需 `x-auth-token`） |
-| `GET /api/qimao/search\|directory\|content` | 七猫搜索 / 目录 / 正文 |
-| `GET /api/ciweimao/search\|directory\|content` | 刺猬猫搜索 / 目录 / 正文 |
+| `GET/POST /api/config` | 查看/设置代理 API |
+| `POST /api/proxy/pool` | 代理池管理 |
 
 ### 🤖 Telegram Bot
 - 账号注册/登录（SHA-256 密码哈希）
@@ -53,8 +50,13 @@
 
 ### 🛡️ 安全机制
 - 管理员账号密码仅从环境变量读取，无硬编码
-- 密码 SHA-256 哈希存储
-- 登录失败限流 + 管理员告警
+- 密码 SHA-256 哈希存储；会话 token 为服务端随机 24 字节，存于 KV 并带 30 天有效期
+- 登录失败限流 + 管理员告警；网页登录另有按 IP 的尝试次数限制
+- 网页登录使用请求头 `x-auth-token` 传递 token，不依赖 Cookie
+- 阅读页返回 CSP（`script-src 'self'` + 内联脚本 SHA-256 白名单）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex`
+- 阅读页所有外部数据（书名、章节标题、正文、搜索词）均经转义后渲染，不使用 `eval` / `innerHTML` 拼接未转义内容
+- Telegram Webhook 未配置 `TG_WEBHOOK_SECRET` 时默认拒绝，校验使用恒定时间比较
+- 导出文件名过滤控制字符与路径保留字符，zip 内章节目录名只保留字母数字下划线，避免解压路径穿越
 
 ---
 
@@ -67,7 +69,7 @@
 
 ### 2. 克隆项目
 ```bash
-git clone https://github.com/a8219/noveldownloader.git
+git clone https://github.com/OWNER/noveldownloader.git
 cd noveldownloader/workers
 ```
 
@@ -82,7 +84,7 @@ wrangler kv namespace create FANQIE_KV
 ```
 复制输出的 `id`，填入 `wrangler.toml` 的 `[[kv_namespaces]]` 中 `id = "<your-kv-id>"`。
 
-> **注意**：`wrangler.toml` 中的 `FANQIE_DO`（Durable Object）通过 `[exports.FanqieJob]` 声明式绑定，首次部署自动创建，无需手动迁移。
+> **注意**：`wrangler.toml` 中的 `FANQIE_DO`（Durable Object）由 `[[migrations]]` 自动创建，无需手动配置。
 
 ### 5. 设置环境变量（Secrets）
 ```bash
@@ -99,10 +101,22 @@ wrangler secret put FANQIE_USE_PROXY        # 1=启用代理池
 wrangler secret put TG_WEBHOOK_SECRET       # Webhook 校验串
 ```
 
-### 6. 部署
+### 6. 构建并部署
+阅读页源码在仓库根目录的 `static/read.html`，`workers/worker.js` 是内嵌生成的单文件版本。修改阅读页或配色后先重新生成：
+
 ```bash
+cd ..                     # 回到仓库根目录
+python3 workers/build_reader.py
+```
+
+该脚本会把 `static/read.html`、`static/material-theme.txt` 内嵌进 `workers/worker.js`，并按内联脚本重新计算 CSP 哈希。然后部署：
+
+```bash
+cd workers
 wrangler deploy
 ```
+
+> 不要只改 `workers/worker.js` 里的 `const READ_PAGE_HTML = ...`：它是生成结果，页面改动应写在 `static/read.html`。
 
 ### 7. 设置 Telegram Webhook（可选）
 部署后，访问或调用：
@@ -156,6 +170,22 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 - 若您不同意以上条款，请立即停止使用并删除本项目。
 
 ---
+
+## UI 预览环境
+
+`wrangler.preview.toml` 部署独立的 `noveldownloader-ui-preview`，从 `../static/read.html` 导入阅读页。使用已登录的 Wrangler 执行：
+
+```bash
+npx wrangler deploy --config wrangler.preview.toml
+```
+
+预览页的 `/api/*` 通过 `READER_API` service binding 调用现有的 `fanqie-downloader`。搜索、目录、正文、认证、书架和历史均使用现有后端；书架与历史操作会修改现有账号数据。预览不复制生产密钥或存储绑定，也不提供 Telegram 设置/回调路由。生产阅读页不随预览部署改变。
+
+外观面板支持自动尝试 CSS `AccentColor`、自选主题色、明暗主题和全局玻璃材质。Android Chrome 等浏览器可能不开放系统强调色，网页无法直接读取壁纸莫奈色；检测不到时明确提示，并使用可手动调整的主题色。动态色板通过本地打包的 Google Material Color Utilities 0.4.0 生成，覆盖主色、容器、表面及文字等颜色角色；未把普通混色声称为系统取色。图标均为内联 SVG，许可见 `../static/LUCIDE-LICENSE.txt`。原生系统选择器、权限提示与系统语音界面仍由浏览器/系统绘制。
+
+阅读支持「上下滚动」与「左右翻页」两种方式，正文上方和外观面板都可切换。翻页按当前可视高度分栏，提供页码、按钮、左右滑动与方向键操作；跨越章首/章末可进入相邻章节（向前返回上一章末页）。窗口尺寸改变后按章内比例重排，阅读方式和最近一次章内翻页进度保存在本浏览器。直接打开章节链接时也会加载目录以启用相邻章节导航，朗读仍读取整章文本。
+
+`material-theme-entry.js` 是配色入口，使用 `@material/material-color-utilities@0.4.0` 和 esbuild 构建成 `../static/material-theme.txt`（IIFE，全局变量 `MaterialTheme`）。预览 Worker 将文本模块作为 `/material-theme.js` 返回，运行时不访问 CDN。重新构建时保留 Google 版权和 Apache-2.0 许可，完整许可另见 `../static/MATERIAL-LICENSE.txt`。
 
 ## 📄 License
 - 项目基于 [AGPL-3.0](../LICENSE) 开源协议。
