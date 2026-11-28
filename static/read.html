@@ -828,9 +828,96 @@ if (ttsBtn) ttsBtn.onclick = function(){
       });
     });
   }
+  var activeBookDownload = null;
+  function downloadContentUrl(source, bid, itemId) {
+    var item = encodeURIComponent(itemId || ''), book = encodeURIComponent(bid || '');
+    if (source === 'qimao') return '/api/qimao/content?item_id=' + item + '&book_id=' + book;
+    if (source === 'ciweimao') return '/api/ciweimao/content?item_id=' + item + '&book_id=' + book;
+    return '/api/content?item_id=' + item;
+  }
+  function downloadFileName(name) {
+    var input = String(name || '小说'), output = '', backslash = String.fromCharCode(92);
+    for (var i = 0; i < input.length; i++) {
+      var c = input.charAt(i), code = input.charCodeAt(i);
+      output += code < 32 || c === '/' || c === backslash || c === ':' || c === '*' || c === '?' || c === '"' || c === '<' || c === '>' || c === '|' ? '_' : c;
+    }
+    return output.trim().slice(0, 80) || '小说';
+  }
+  function saveOfflineText(fileName, text, callback) {
+    if (typeof window.__ndSaveTextFile !== 'function') { callback(false, '当前环境暂不支持保存到 Download 目录'); return; }
+    window.__ndSaveTextFile(fileName, text, callback);
+  }
+  function downloadChapterTxt(bookName, chapterTitle, content) {
+    var safeBook = downloadFileName(bookName || '小说');
+    var safeChapter = downloadFileName(chapterTitle || '章节');
+    var newline = String.fromCharCode(10);
+    var body = (bookName ? '《' + bookName + '》' + newline : '') + chapterTitle + newline + newline + content;
+    saveOfflineText(safeBook + ' - ' + safeChapter + '.txt', body, function(ok, message) {
+      notify(ok ? message : (message || '保存失败'));
+    });
+  }
+  function startBookDownload(bookName, chapters, button, status) {
+    if (activeBookDownload) {
+      activeBookDownload.cancelled = true;
+      if (button) { button.disabled = true; button.textContent = '正在停止…'; }
+      if (status) status.textContent = '正在结束当前请求…';
+      return;
+    }
+    if (!chapters || !chapters.length) { notify('目录为空，无法下载'); return; }
+    var source = src, bid = bookId, newline = String.fromCharCode(10), parts = ['《' + (bookName || '未命名书籍') + '》'], failed = 0, succeeded = 0;
+    var task = { cancelled: false };
+    activeBookDownload = task;
+    if (button) { button.textContent = '取消下载'; button.disabled = false; }
+    if (status) status.textContent = '准备下载 ' + chapters.length + ' 章…';
+    function finish() {
+      if (activeBookDownload === task) activeBookDownload = null;
+      if (button && button.isConnected) { button.textContent = '下载全书 TXT'; button.disabled = false; button.onclick = function() { startBookDownload(bookName, chapters, button, status); }; }
+      if (task.cancelled) {
+        if (status && status.isConnected) status.textContent = '已取消，未保存未完成的文件';
+        notify('已取消全书下载；未完成的内容没有保存。');
+        return;
+      }
+      if (!succeeded) {
+        if (status && status.isConnected) status.textContent = '没有成功获取章节';
+        notify('没有成功获取章节，请检查网络或书源后重试。');
+        return;
+      }
+      var text = parts.join(newline + newline);
+      if (failed) text += newline + newline + '[提示：有 ' + failed + ' 章获取失败或不可用，文件可能不完整。]';
+      if (status && status.isConnected) status.textContent = '正在写入 Download 目录…';
+      saveOfflineText(downloadFileName(bookName) + '.txt', text, function(ok, message) {
+        if (status && status.isConnected) status.textContent = ok ? ('已下载 ' + succeeded + ' 章' + (failed ? '，失败 ' + failed + ' 章' : '')) : '保存失败';
+        notify(ok ? (message + (failed ? '（有 ' + failed + ' 章未获取）' : '')) : (message || '保存失败'));
+      });
+    }
+    function getChapter(index) {
+      if (task.cancelled) { finish(); return; }
+      if (index >= chapters.length) { finish(); return; }
+      var chapter = chapters[index] || {}, chapterTitle = String(chapter.title || ('第 ' + (index + 1) + ' 章'));
+      api(downloadContentUrl(source, bid, chapter.item_id)).then(function(result) {
+        var data = result && result.data || {}, content = String(data.content || '').trim();
+        if (data.paid || !content) {
+          failed++;
+          parts.push('## ' + chapterTitle + newline + newline + '[本章不可获取或需要登录]');
+        } else {
+          succeeded++;
+          parts.push('## ' + String(data.title || chapterTitle) + newline + newline + content);
+        }
+      }).catch(function(error) {
+        failed++;
+        parts.push('## ' + chapterTitle + newline + newline + '[获取失败：' + String(error && error.message || error).slice(0, 160) + ']');
+      }).then(function() {
+        if (status && status.isConnected) status.textContent = (task.cancelled ? '正在停止… ' : '下载进度：') + Math.min(index + 1, chapters.length) + '/' + chapters.length + ' 章';
+        if (task.cancelled || index + 1 >= chapters.length) { finish(); return; }
+        setTimeout(function() { getChapter(index + 1); }, source === 'fanqie' ? 180 : 700);
+      });
+    }
+    getChapter(0);
+  }
   function setNav(view){ var items = document.querySelectorAll('.mdc-navigation-item'); for(var i=0;i<items.length;i++){ items[i].className = items[i].getAttribute('data-view')===view ? 'mdc-navigation-item active' : 'mdc-navigation-item'; } }
 
   function go(book, item){
+    if (activeBookDownload) activeBookDownload.cancelled = true;
     bookId = book || ''; itemId = item || '';
     var qs = [];
     if (bookId) qs.push('book_id=' + encodeURIComponent(bookId));
@@ -950,6 +1037,8 @@ if (ttsBtn) ttsBtn.onclick = function(){
 html += '<button class="mdc-button" id="read" style="flex:1">开始阅读</button>';
 html += '<button class="mdc-button tonal" id="addShelf" style="flex:1">加入书架</button>';
 html += '</div>';
+      html += '<button class="mdc-button tonal" id="downloadBook" style="width:100%;margin-top:8px">下载全书 TXT</button>';
+      html += '<div id="downloadStatus" role="status" style="min-height:18px;margin:6px 0 0;font-size:12px;color:var(--md-sys-color-on-surface-variant)"></div>';
       html += '</div></div>';
       if (info.abstract) html += '<div style="padding:0 16px 14px;font-size:14px;color:var(--md-sys-color-on-surface-variant);line-height:1.7">' + esc(String(info.abstract).slice(0, 200)) + '</div>';
       html += '</div>';
@@ -968,6 +1057,9 @@ html += '</div>';
       if (addShelfBtn) addShelfBtn.onclick = function(){ shelfAdd(bookId, info.book_name || ''); };
       var readBtn = document.getElementById('read');
       if (readBtn && lists.length) readBtn.onclick = function(){ go(bookId, lists[0].item_id); };
+      var downloadBtn = document.getElementById('downloadBook');
+      var downloadStatus = document.getElementById('downloadStatus');
+      if (downloadBtn) downloadBtn.onclick = function(){ startBookDownload(name, lists, downloadBtn, downloadStatus); };
       var items = app.querySelectorAll('.mdc-list-item');
       for (var k = 0; k < items.length; k++) items[k].onclick = function(){ go(bookId, this.getAttribute('data-item')); };
     }).catch(function(e){
@@ -1108,12 +1200,13 @@ html += '</div>';
       var html = '<div class="chapter-heading"><div class="chapter-title">' + esc(title) + '</div>';
       if (d.book_name) html += '<div style="font-size:13px;color:var(--md-sys-color-on-surface-variant)">' + esc(d.book_name) + '</div>';
       html += '<div class="reader-mode-row"><span id="readingModeHint" class="reader-mode-hint"></span><button id="readingModeToggle" type="button" class="mdc-button tonal">切换为翻页</button></div>';
-      html += '</div><div id="chapterViewport"><div id="content">' + esc(text) + '</div></div><div id="pageStatus" role="status" aria-live="polite"></div><div class="read-nav">';
+      html += '</div><div style="padding:0 18px 6px"><button class="mdc-button tonal" id="downloadChapter" style="width:100%">下载本章 TXT</button></div><div id="chapterViewport"><div id="content">' + esc(text) + '</div></div><div id="pageStatus" role="status" aria-live="polite"></div><div class="read-nav">';
       html += '<button class="mdc-button" id="prev"' + (idx > 0 ? '' : ' disabled') + '>上一章</button>';
       html += '<button class="mdc-button tonal" id="toc">目录</button>';
       html += '<button class="mdc-button" id="next"' + (idx >= 0 && idx < dirCache.length - 1 ? '' : ' disabled') + '>下一章</button></div>';
       app.innerHTML = html;
       document.getElementById('toc').onclick = function(){ go(bookId, ''); };
+      document.getElementById('downloadChapter').onclick = function(){ downloadChapterTxt(d.book_name || '小说', title, text); };
       document.getElementById('prev').onclick = function(){ if (idx > 0) go(bookId, dirCache[idx - 1].item_id); };
       document.getElementById('next').onclick = function(){ if (idx >= 0 && idx < dirCache.length - 1) go(bookId, dirCache[idx + 1].item_id); };
       setupReader();

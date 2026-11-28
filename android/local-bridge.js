@@ -190,5 +190,115 @@
     }
     button.onclick = open;
   }
+  function injectFirstRunDialogs() {
+    var termsKey = 'nd_terms_accepted_v1';
+    var starKey = 'nd_star_prompt_shown_v1';
+    var style = document.createElement('style');
+    style.textContent = '#ndFirstRunScrim{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}' +
+      '#ndFirstRunPanel{width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;background:var(--md-sys-color-surface,#fef7ff);color:var(--md-sys-color-on-surface,#1d1b20);border-radius:22px;box-shadow:0 12px 48px rgba(0,0,0,.3);padding:20px;box-sizing:border-box}' +
+      '#ndFirstRunPanel h2{font-size:20px;margin:0 0 10px}#ndFirstRunPanel .ndIntro{font-size:13px;line-height:1.6;color:var(--md-sys-color-on-surface-variant,#49454f);margin:0 0 12px}' +
+      '#ndTermsText{overflow:auto;overscroll-behavior:contain;padding:0 2px 8px;font-size:13px;line-height:1.65;color:var(--md-sys-color-on-surface,#1d1b20)}' +
+      '#ndTermsText h3{font-size:14px;margin:12px 0 3px}#ndTermsText p{margin:0 0 8px}' +
+      '#ndTermsAgree{display:flex;align-items:flex-start;gap:9px;padding:12px 0;font-size:13px;line-height:1.5;border-top:1px solid var(--md-sys-color-outline-variant,#cac4d0)}' +
+      '#ndTermsAgree input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--md-sys-color-primary,#6750a4)}' +
+      '#ndFirstRunActions{display:flex;gap:8px}#ndFirstRunActions button{flex:1;min-height:44px;border:0;border-radius:14px;font-size:14px;cursor:pointer;background:var(--md-sys-color-secondary-container,#e8def8);color:var(--md-sys-color-on-secondary-container,#1d192b)}' +
+      '#ndFirstRunActions button.primary{background:var(--md-sys-color-primary,#6750a4);color:var(--md-sys-color-on-primary,#fff)}#ndFirstRunActions button:disabled{opacity:.45;cursor:default}' +
+      '#ndStarPanel{text-align:center;padding:28px 22px}#ndStarPanel .ndStarIcon{font-size:38px;line-height:1;margin-bottom:12px}#ndStarPanel p{font-size:14px;line-height:1.6;color:var(--md-sys-color-on-surface-variant,#49454f);margin:8px 0 18px}' +
+      '#ndStarPanel .ndStarActions{display:flex;gap:8px}#ndStarPanel button{flex:1;min-height:44px;border:0;border-radius:14px;font-size:14px;cursor:pointer;background:var(--md-sys-color-secondary-container,#e8def8);color:var(--md-sys-color-on-secondary-container,#1d192b)}' +
+      '#ndStarPanel button.primary{background:var(--md-sys-color-primary,#6750a4);color:var(--md-sys-color-on-primary,#fff)}';
+    document.head.appendChild(style);
+
+    function removeScrim(scrim) {
+      if (scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim);
+      document.body.style.overflow = '';
+    }
+    function showStarPrompt() {
+      if (LS.getItem(starKey) === '1') return;
+      LS.setItem(starKey, '1');
+      var scrim = document.createElement('div');
+      scrim.id = 'ndFirstRunScrim';
+      scrim.innerHTML = '<div id="ndFirstRunPanel" role="dialog" aria-modal="true" aria-labelledby="ndStarTitle"><div id="ndStarPanel">' +
+        '<div class="ndStarIcon" aria-hidden="true">⭐</div><h2 id="ndStarTitle">喜欢这个离线阅读器吗？</h2>' +
+        '<p>项目开源免费。如果觉得好用，欢迎到 GitHub 点个 Star 支持后续维护；不想点也可以直接开始使用。</p>' +
+        '<div class="ndStarActions"><button id="ndStarSkip">先开始使用</button><button id="ndStarGo" class="primary">去 GitHub 点 Star</button></div>' +
+        '</div></div>';
+      document.body.appendChild(scrim);
+      document.body.style.overflow = 'hidden';
+      document.getElementById('ndStarSkip').onclick = function () { removeScrim(scrim); };
+      document.getElementById('ndStarGo').onclick = function () {
+        try { if (window.NativeDownloads) window.NativeDownloads.openGithub(); } catch (e) {}
+        removeScrim(scrim);
+      };
+      scrim.onclick = function (event) { if (event.target === scrim) removeScrim(scrim); };
+    }
+    function showTerms() {
+      var scrim = document.createElement('div');
+      scrim.id = 'ndFirstRunScrim';
+      scrim.innerHTML = '<div id="ndFirstRunPanel" role="dialog" aria-modal="true" aria-labelledby="ndTermsTitle">' +
+        '<h2 id="ndTermsTitle">使用条款与用户协议</h2>' +
+        '<p class="ndIntro">首次使用前请阅读以下约定。必须勾选同意后才能进入；不同意可退出应用。</p>' +
+        '<div id="ndTermsText" tabindex="0">' +
+        '<h3>一、服务说明</h3><p>本应用是用于个人学习、研究和技术交流的本地阅读工具，可通过网络检索或读取相应内容平台提供的内容，并将可获取的章节整理为文本文件保存到本机 Download 目录。本应用本身不托管或分发小说内容。</p>' +
+        '<h3>二、版权与合规使用</h3><p>小说及其他内容的版权归原作者、权利人及相应平台所有。你应确认自己有权访问、阅读和保存所获取的内容，并遵守所在地法律法规及平台服务条款。不得将本应用用于商业用途、批量抓取、转售或未经授权的传播，也不得侵害他人合法权益。</p>' +
+        '<h3>三、网络请求与本地数据</h3><p>搜索、目录和章节获取需要网络连接；相关请求会发送至所选内容平台，以及你自行配置的代理服务（如有）。这些服务可能按其规则处理请求并获得网络连接所需的信息。本应用的书架、阅读历史、外观设置及可选配置保存在本机；应用开发者不会通过本应用收集这些本地数据。请妥善保管自行填写的 Cookie 或其他凭据。</p>' +
+        '<h3>四、风险与责任</h3><p>本应用按“现状”提供，不保证持续可用、内容完整或准确。使用网络服务和保存内容可能受到平台限制或产生其他后果；请自行评估并承担风险。在法律允许的范围内，开发者不对因使用本应用造成的损失承担责任。</p>' +
+        '<h3>五、同意与退出</h3><p>勾选并继续即表示你已阅读、理解并同意本协议。你可以随时停止使用并卸载应用；清除应用数据或卸载会移除本地保存的阅读数据。</p>' +
+        '</div>' +
+        '<label id="ndTermsAgree"><input id="ndTermsCheck" type="checkbox"><span>我已阅读并同意《使用条款与用户协议》</span></label>' +
+        '<div id="ndFirstRunActions"><button id="ndTermsReject">不同意并退出</button><button id="ndTermsAccept" class="primary" disabled>同意并继续</button></div>' +
+        '</div>';
+      document.body.appendChild(scrim);
+      document.body.style.overflow = 'hidden';
+      var check = document.getElementById('ndTermsCheck');
+      var accept = document.getElementById('ndTermsAccept');
+      check.onchange = function () { accept.disabled = !check.checked; };
+      accept.onclick = function () {
+        if (!check.checked) return;
+        LS.setItem(termsKey, '1');
+        removeScrim(scrim);
+        showStarPrompt();
+      };
+      document.getElementById('ndTermsReject').onclick = function () {
+        try { if (window.NativeDownloads) window.NativeDownloads.exitApp(); } catch (e) {}
+      };
+      scrim.addEventListener('click', function (event) { if (event.target === scrim) event.preventDefault(); });
+      document.addEventListener('keydown', function blockDismiss(event) {
+        if (document.getElementById('ndFirstRunScrim') !== scrim) { document.removeEventListener('keydown', blockDismiss); return; }
+        if (event.key === 'Escape' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); }
+      }, true);
+      check.focus();
+    }
+    try {
+      if (LS.getItem(termsKey) === '1') showStarPrompt();
+      else showTerms();
+    } catch (e) {
+      showTerms();
+    }
+  }
+
+  var saveCallbackSeq = 0;
+  window.__ndSaveTextFile = function (fileName, content, callback) {
+    if (!window.NativeDownloads || typeof window.NativeDownloads.saveTextFile !== 'function') {
+      if (callback) callback(false, '当前环境不支持保存到 Android Download 目录');
+      return;
+    }
+    var callbackId = 'ndSaveCb_' + (++saveCallbackSeq);
+    var done = false;
+    function finish(ok, message) {
+      if (done) return;
+      done = true;
+      try { delete window[callbackId]; } catch (e) { window[callbackId] = null; }
+      if (callback) callback(!!ok, String(message || ''));
+    }
+    window[callbackId] = finish;
+    try {
+      window.NativeDownloads.saveTextFile(String(fileName || 'novel.txt'), String(content || ''), callbackId);
+    } catch (e) {
+      finish(false, '调用 Android 保存接口失败');
+    }
+    setTimeout(function () { finish(false, '保存超时，请重试'); }, 180000);
+  };
+
   injectSettings();
+  injectFirstRunDialogs();
 })();

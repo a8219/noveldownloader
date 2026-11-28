@@ -6,6 +6,8 @@
 - **不经过自建服务器**：只有取书时才访问书源接口，不会把阅读数据发到任何自建服务。
 - **内置番茄搜索**：使用内置的 APP 签名请求（`/bookapi/search/page/v/`），无需代理即可搜书。
 - 本地自动创建「本地阅读」账号，书架与阅读历史存在本机 `localStorage`。
+- v1.1 首次进入需阅读并同意使用条款与用户协议；同意后只出现一次可跳过的 GitHub Star 邀请。
+- 阅读页支持下载本章或全书 TXT，Android 端保存到系统 `Download` 目录。
 - 可选设置（阅读页右下角 ⚙）：代理 API 基址、番茄网页 Cookie；保存后立即生效，也可一键清除本地数据。
 
 ## 构建
@@ -27,7 +29,7 @@ python3 workers/build_reader.py
 bash android/build_apk.sh
 ```
 
-产物：`android/build/本地小说阅读-离线版-1.0.apk`。可用 `SDK_JAR`、`BT`、`AAPT2`、`D8` 环境变量覆盖默认工具路径。
+产物：`android/build/本地小说阅读-离线版-1.1.apk`。可用 `BUILD_DIR`、`SDK_JAR`、`BT`、`AAPT2`、`D8` 环境变量覆盖默认工具路径。
 
 ## 结构
 

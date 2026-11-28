@@ -4,7 +4,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-BUILD="$HERE/build"
+BUILD="${BUILD_DIR:-$HERE/build}"
 SDK_JAR="${SDK_JAR:-/usr/lib/android-sdk/platforms/android-23/android.jar}"
 BT="${BT:-/usr/lib/android-sdk/build-tools/29.0.3}"
 AAPT2="${AAPT2:-$(command -v aapt2 || echo /usr/bin/aapt2)}"
@@ -12,7 +12,7 @@ D8="${D8:-/root/tools/r8.jar}"
 KEYSTORE="${KEYSTORE:-${HOME}/novelreader.keystore}"
 KS_PASS="${KS_PASS:-novelreader}"
 PKG=com.a8219.novelreader
-APK_NAME="本地小说阅读-离线版-1.0.apk"
+APK_NAME="本地小说阅读-离线版-1.1.apk"
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD/classes" "$BUILD/res/mipmap-xxhdpi" "$BUILD/res/values"

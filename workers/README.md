@@ -75,7 +75,7 @@
 
 ### 2. 克隆项目
 ```bash
-git clone https://github.com/OWNER/noveldownloader.git
+git clone https://github.com/a8219/noveldownloader.git
 cd noveldownloader/workers
 ```
 

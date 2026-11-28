@@ -1,11 +1,12 @@
 """Build the offline Android assets from the same reader/Worker source as production."""
-import importlib.util
+import os
 import re
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]          # repo root
 ANDROID = Path(__file__).resolve().parent
-OUT = ANDROID / "build" / "assets"
+BUILD = Path(os.environ.get('BUILD_DIR', ANDROID / 'build'))
+OUT = BUILD / 'assets'
 
 APP_SEARCH_HELPER = '''
 async function __localSearchBooks(keyword, pageIndex, pageCount) {
